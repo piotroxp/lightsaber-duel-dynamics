@@ -5,9 +5,16 @@
     { "path": "./tsconfig.node.json" }
   ],
   "compilerOptions": {
+    "target": "es6",
+    "module": "commonjs",
+    "lib": ["dom", "es6"],
+    "strict": true,
+    "esModuleInterop": true,
     "baseUrl": ".",
+    "forceConsistentCasingInFileNames": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "*": ["node_modules/*"]
     },
     "noImplicitAny": false,
     "noUnusedParameters": false,
