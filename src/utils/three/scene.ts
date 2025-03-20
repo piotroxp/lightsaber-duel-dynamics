@@ -100,52 +100,73 @@ export class GameScene {
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
     
-    // Load assets
-    await this.loadAssets();
-    
-    // Setup lighting
-    this.setupLighting();
-    
-    // Create environment
-    this.createEnvironment();
-    
-    // Create enemies
-    this.createEnemies();
-    
-    // Start animation loop
-    this.animate();
-    
-    this.isInitialized = true;
-    this.onLoadComplete();
+    // Load assets with proper error handling
+    try {
+      await this.loadAssets();
+      
+      // Setup lighting
+      this.setupLighting();
+      
+      // Create environment
+      this.createEnvironment();
+      
+      // Create enemies
+      this.createEnemies();
+      
+      // Start animation loop
+      this.animate();
+      
+      this.isInitialized = true;
+      console.log("Game scene initialized successfully");
+      this.onLoadComplete();
+    } catch (error) {
+      console.error("Error initializing game scene:", error);
+    }
   }
   
   private async loadAssets(): Promise<boolean> {
     try {
-      // Initialize audio
+      // Initialize audio with better progress tracking
       await gameAudio.initialize((progress) => {
+        console.log("Audio loading progress:", progress);
         this.onLoadProgress(progress * 0.8); // Audio is 80% of loading
       });
       
       // Load textures
       const textureLoader = new TextureLoader();
-      const floorTexture = await new Promise<any>((resolve) => {
-        textureLoader.load('/textures/floor.jpg', (texture) => {
-          this.onLoadProgress(0.9); // Textures are 10% of loading
-          resolve(texture);
-        });
+      await new Promise<void>((resolve, reject) => {
+        textureLoader.load(
+          '/textures/floor.jpg', 
+          (texture) => {
+            console.log("Floor texture loaded");
+            texture.wrapS = RepeatWrapping;
+            texture.wrapT = RepeatWrapping;
+            texture.repeat.set(10, 10);
+            this.onLoadProgress(0.9); // Textures are 10% of loading
+            resolve();
+          },
+          // Progress callback
+          (xhr) => {
+            console.log(`Texture ${(xhr.loaded / xhr.total) * 100}% loaded`);
+          },
+          // Error callback
+          (error) => {
+            console.error("Error loading texture:", error);
+            // Continue even if texture fails
+            this.onLoadProgress(0.9);
+            resolve();
+          }
+        );
       });
       
-      // Set texture properties
-      floorTexture.wrapS = RepeatWrapping;
-      floorTexture.wrapT = RepeatWrapping;
-      floorTexture.repeat.set(10, 10);
-      
       this.onLoadProgress(1.0);
+      console.log("All assets loaded successfully");
       
       return true;
     } catch (error) {
       console.error("Error loading assets:", error);
-      // Maybe provide a UI indication of failure
+      // Complete loading even if there's an error
+      this.onLoadProgress(1.0);
       return false;
     }
   }

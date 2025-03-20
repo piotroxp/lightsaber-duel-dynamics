@@ -1,7 +1,6 @@
-
 import { Group, Scene, Vector3, Mesh, BoxGeometry, MeshStandardMaterial, SphereGeometry, CylinderGeometry, Color, Quaternion, Euler, MathUtils } from 'three';
 import { Lightsaber } from './lightsaber';
-import { createSaberClashEffect } from './effects';
+import { createSaberClashEffect, createHitEffect } from './effects';
 import gameAudio from './audio';
 
 export interface EnemyOptions {
@@ -407,6 +406,9 @@ export class Enemy extends Group {
     
     // Play death sound
     gameAudio.playSound('enemyHit', { volume: 1.0 });
+    
+    // Create hit effect
+    createHitEffect(this.parent as Scene, this.position.clone(), '#ff3333');
   }
   
   private animate(deltaTime: number): void {

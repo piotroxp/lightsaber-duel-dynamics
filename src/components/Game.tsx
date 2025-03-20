@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import LoadingScreen from './LoadingScreen';
@@ -32,15 +31,17 @@ const Game: React.FC = () => {
   
   const initializeGame = async () => {
     if (containerRef.current) {
+      console.log("Initializing game scene...");
+      
       const onLoadProgress = (progress: number) => {
+        console.log(`Loading progress: ${progress * 100}%`);
         setGameState(prev => ({ ...prev, loadingProgress: progress }));
       };
       
       const onLoadComplete = () => {
+        console.log("Loading complete!");
         setTimeout(() => {
           setGameState(prev => ({ ...prev, isLoading: false }));
-          // Don't start music until user interaction
-          // gameSceneRef.current?.startBackgroundMusic();
         }, 1000);
       };
       
@@ -50,24 +51,26 @@ const Game: React.FC = () => {
         onLoadComplete
       );
       
-      await gameScene.initialize();
-      gameSceneRef.current = gameScene;
+      try {
+        await gameScene.initialize();
+        gameSceneRef.current = gameScene;
+        console.log("Game scene initialized");
+      } catch (error) {
+        console.error("Failed to initialize game:", error);
+      }
     }
   };
   
-  // Start the game on mount
   useEffect(() => {
     initializeGame();
     
     return () => {
-      // Cleanup
       if (gameSceneRef.current) {
         gameSceneRef.current.cleanup();
       }
     };
   }, []);
   
-  // Update health and game state
   useEffect(() => {
     if (gameSceneRef.current && !gameState.isLoading) {
       const updateInterval = setInterval(() => {
@@ -75,21 +78,17 @@ const Game: React.FC = () => {
         const combatSystem = gameSceneRef.current?.getCombatSystem();
         
         if (player && combatSystem) {
-          // Get player health
           const playerHealth = player.getHealth();
           const playerMaxHealth = player.getMaxHealth();
           
-          // Get enemy health (first enemy for simplicity)
           const enemies = combatSystem.getEnemies();
           const enemy = enemies[0];
           const enemyHealth = enemy ? enemy.getHealth() : 0;
           const enemyMaxHealth = enemy ? enemy.getMaxHealth() : 100;
           
-          // Check game state
           const playerDefeated = playerHealth <= 0;
           const enemyDefeated = enemies.length > 0 && enemies.every(e => !e.isAlive());
           
-          // Update state
           setGameState(prev => ({
             ...prev,
             playerHealth,
@@ -100,13 +99,10 @@ const Game: React.FC = () => {
             victory: enemyDefeated
           }));
           
-          // Handle game over
           if (playerDefeated || enemyDefeated) {
             clearInterval(updateInterval);
             gameSceneRef.current?.unlockControls();
-            
-            // Slow background music volume
-            // gameSceneRef.current?.stopBackgroundMusic();
+            gameSceneRef.current?.stopBackgroundMusic();
           }
         }
       }, 100);
@@ -115,17 +111,14 @@ const Game: React.FC = () => {
     }
   }, [gameState.isLoading]);
   
-  // Handle restart
   const handleRestart = () => {
     window.location.reload();
   };
   
-  // Handle user interaction to resume audio context
   const handleUserInteraction = () => {
-    // Resume the audio context to fix browser autoplay policy issues
+    console.log("User interaction detected, resuming audio");
     gameAudio.resumeAudio();
     
-    // Start background music after user interaction
     if (gameSceneRef.current) {
       gameSceneRef.current.startBackgroundMusic();
       gameSceneRef.current.lockControls();
@@ -134,23 +127,19 @@ const Game: React.FC = () => {
   
   return (
     <div className="relative w-full h-screen overflow-hidden">
-      {/* Loading screen */}
       <LoadingScreen 
         progress={gameState.loadingProgress} 
         isLoaded={!gameState.isLoading} 
       />
       
-      {/* Game container */}
       <div 
         ref={containerRef} 
         className="w-full h-full" 
         onClick={handleUserInteraction}
       />
       
-      {/* Game UI */}
       {!gameState.isLoading && (
         <div className="game-ui">
-          {/* Instructions overlay - shown briefly */}
           {!gameState.gameOver && !gameState.victory && (
             <motion.div 
               initial={{ opacity: 1 }}
@@ -165,9 +154,7 @@ const Game: React.FC = () => {
             </motion.div>
           )}
           
-          {/* Health bars */}
           <div className="fixed top-6 left-0 w-full px-6 flex justify-between items-center pointer-events-none">
-            {/* Player health */}
             <div className="player-health w-2/5">
               <div className="text-sm text-saber-blue font-medium mb-1">Player</div>
               <div className="health-bar">
@@ -178,7 +165,6 @@ const Game: React.FC = () => {
               </div>
             </div>
             
-            {/* Enemy health */}
             <div className="enemy-health w-2/5">
               <div className="text-sm text-saber-red font-medium mb-1 text-right">Enemy</div>
               <div className="health-bar">
@@ -190,7 +176,6 @@ const Game: React.FC = () => {
             </div>
           </div>
           
-          {/* Game over screen */}
           {gameState.gameOver && (
             <motion.div 
               initial={{ opacity: 0 }}
@@ -211,7 +196,6 @@ const Game: React.FC = () => {
             </motion.div>
           )}
           
-          {/* Victory screen */}
           {gameState.victory && (
             <motion.div 
               initial={{ opacity: 0 }}

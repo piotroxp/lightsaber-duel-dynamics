@@ -1,4 +1,3 @@
-
 import { Group, Scene, Vector3, Points, BufferGeometry, PointsMaterial, BufferAttribute, Color, Object3D, Mesh, SphereGeometry, MeshBasicMaterial, AdditiveBlending } from 'three';
 
 export interface ParticleOptions {
@@ -20,7 +19,7 @@ interface Particle {
   active: boolean;
 }
 
-// Changed to extend Group to properly inherit position and other properties
+// Need to properly extend THREE.Group
 export class ParticleEmitter extends Group {
   private particles: Particle[] = [];
   private geometry: BufferGeometry;
@@ -35,7 +34,7 @@ export class ParticleEmitter extends Group {
   private timeSinceLastEmission: number = 0;
   
   constructor(options: ParticleOptions = {}) {
-    super();
+    super(); // Call Group constructor
     
     this.maxParticles = options.maxParticles || 100;
     this.emissionRate = options.emissionRate || 10; // particles per second
@@ -102,7 +101,7 @@ export class ParticleEmitter extends Group {
     
     // Create points mesh
     this.points = new Points(this.geometry, this.material);
-    this.add(this.points);
+    this.add(this.points); // Now this.add works because we extend Group
   }
   
   setActive(active: boolean): void {

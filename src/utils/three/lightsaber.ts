@@ -1,228 +1,186 @@
 
-import { Group, Vector3, Mesh, CylinderGeometry, MeshStandardMaterial, SphereGeometry, Object3D, Color } from 'three';
+import { Group, Vector3, Mesh, CylinderGeometry, MeshStandardMaterial, MeshBasicMaterial, Color, AdditiveBlending, SpotLight, Object3D } from 'three';
 import { ParticleEmitter } from './effects';
+import gameAudio from './audio';
 
 export interface LightsaberOptions {
   color?: string;
   bladeLength?: number;
-  handleLength?: number;
-  handleRadius?: number;
-  bladeRadius?: number;
-  bladeColor?: string; // Adding this for compatibility
+  hiltLength?: number;
 }
 
 export class Lightsaber extends Group {
-  private blade: Mesh;
-  private handle: Mesh;
-  private bladeEmitter: ParticleEmitter | null = null;
   private bladeColor: string;
-  private isActive: boolean = false;
   private bladeLength: number;
-  private handleLength: number;
-  private bladeFullLength: number;
-  private bladeCurrentLength: number = 0;
-  private activationSpeed: number = 5; // Units per second
-  private bladeTarget: Object3D;
-  
+  private hiltLength: number;
+  private active: boolean = false;
+  private activationProgress: number = 0;
+  private hilt: Mesh;
+  private blade: Mesh;
+  private bladeLight: SpotLight;
+  private glowEmitter: ParticleEmitter | null = null;
+
   constructor(options: LightsaberOptions = {}) {
-    super();
+    super(); // Call the Group constructor
     
-    this.bladeColor = options.color || options.bladeColor || '#3366ff';
-    this.bladeLength = options.bladeLength || 1.0;
-    this.handleLength = options.handleLength || 0.2;
-    const handleRadius = options.handleRadius || 0.025;
-    const bladeRadius = options.bladeRadius || 0.015;
+    this.bladeColor = options.color || '#3366ff';
+    this.bladeLength = options.bladeLength || 1.2;
+    this.hiltLength = options.hiltLength || 0.2;
     
-    this.bladeFullLength = this.bladeLength;
-    
-    // Create handle
-    const handleGeometry = new CylinderGeometry(
-      handleRadius,
-      handleRadius,
-      this.handleLength,
-      16, 1, false
-    );
-    const handleMaterial = new MeshStandardMaterial({
-      color: 0x222222,
-      roughness: 0.7,
-      metalness: 0.8
+    // Create hilt
+    const hiltGeometry = new CylinderGeometry(0.02, 0.025, this.hiltLength, 16);
+    const hiltMaterial = new MeshStandardMaterial({
+      color: 0x888888,
+      metalness: 0.8,
+      roughness: 0.2
     });
-    this.handle = new Mesh(handleGeometry, handleMaterial);
-    this.handle.castShadow = true;
+    this.hilt = new Mesh(hiltGeometry, hiltMaterial);
+    this.hilt.castShadow = true;
+    this.hilt.position.y = this.hiltLength / 2;
+    this.add(this.hilt);
     
-    // Create blade (initially invisible with zero length)
-    const bladeGeometry = new CylinderGeometry(
-      bladeRadius,
-      bladeRadius,
-      0.001, // Start with minimal length
-      16, 1, false
-    );
-    const bladeMaterial = new MeshStandardMaterial({
+    // Create blade (initially invisible)
+    const bladeGeometry = new CylinderGeometry(0.02, 0.01, this.bladeLength, 16);
+    const bladeMaterial = new MeshBasicMaterial({
       color: new Color(this.bladeColor),
-      emissive: new Color(this.bladeColor),
-      emissiveIntensity: 1.0,
-      roughness: 0.3,
-      metalness: 0.7
+      transparent: true,
+      opacity: 0,
+      blending: AdditiveBlending
     });
     this.blade = new Mesh(bladeGeometry, bladeMaterial);
-    this.blade.castShadow = true;
-    
-    // Position handle at the bottom
-    this.handle.position.y = 0;
-    this.add(this.handle);
-    
-    // Position blade on top of handle
-    this.blade.position.y = this.handleLength / 2;
+    this.blade.position.y = this.hiltLength + this.bladeLength / 2;
     this.add(this.blade);
     
-    // Create blade tip target for tracking
-    this.bladeTarget = new Object3D();
-    this.bladeTarget.position.y = this.handleLength / 2 + this.bladeFullLength;
-    this.add(this.bladeTarget);
+    // Create light for blade glow
+    this.bladeLight = new SpotLight(
+      this.bladeColor,
+      2,
+      5,
+      Math.PI / 4,
+      0.5,
+      2
+    );
+    this.bladeLight.position.y = this.hiltLength;
+    this.bladeLight.target.position.y = this.hiltLength + this.bladeLength;
+    this.add(this.bladeLight);
+    this.add(this.bladeLight.target);
     
-    // Create emitter at blade tip (will be active only when blade is on)
-    const emitter = new ParticleEmitter({
-      maxParticles: 100,
-      particleSize: 0.03,
+    // Disable the light initially
+    this.bladeLight.visible = false;
+  }
+  
+  createGlowEmitter(): void {
+    // Create particle emitter for blade glow
+    this.glowEmitter = new ParticleEmitter({
+      maxParticles: 50,
+      particleSize: 0.05,
       particleColor: this.bladeColor,
-      emissionRate: 10,
-      particleLifetime: 0.3,
+      emissionRate: 20,
+      particleLifetime: 0.5,
       gravity: new Vector3(0, 0, 0),
-      spread: 0.1
+      spread: 0.05
     });
-    emitter.position.y = this.handleLength / 2 + this.bladeFullLength;
-    this.add(emitter);
-    this.bladeEmitter = emitter;
-    this.bladeEmitter.setActive(false);
-  }
-  
-  activate(): void {
-    if (!this.isActive) {
-      this.isActive = true;
-      
-      // If we have an emitter, activate it
-      if (this.bladeEmitter) {
-        this.bladeEmitter.setActive(true);
-      }
-    }
-  }
-  
-  // Alias for activate for compatibility with player.ts
-  activateBlade(): void {
-    this.activate();
-  }
-  
-  deactivate(): void {
-    if (this.isActive) {
-      this.isActive = false;
-      
-      // If we have an emitter, deactivate it
-      if (this.bladeEmitter) {
-        this.bladeEmitter.setActive(false);
-      }
-    }
+    
+    // Position the emitter at the middle of the blade
+    this.glowEmitter.position.set(0, this.hiltLength + this.bladeLength / 2, 0);
+    this.add(this.glowEmitter);
   }
   
   update(deltaTime: number): void {
-    // Handle lightsaber activation/deactivation animations
-    if (this.isActive && this.bladeCurrentLength < this.bladeFullLength) {
-      // Extend the blade
-      this.bladeCurrentLength += this.activationSpeed * deltaTime;
-      if (this.bladeCurrentLength > this.bladeFullLength) {
-        this.bladeCurrentLength = this.bladeFullLength;
-      }
-      
-      this.updateBladeGeometry();
-    } else if (!this.isActive && this.bladeCurrentLength > 0) {
-      // Retract the blade
-      this.bladeCurrentLength -= this.activationSpeed * deltaTime;
-      if (this.bladeCurrentLength < 0) {
-        this.bladeCurrentLength = 0;
-      }
-      
-      this.updateBladeGeometry();
+    // Update activation animation
+    if (this.active && this.activationProgress < 1.0) {
+      this.activationProgress += deltaTime * 2; // Fully activate in 0.5 seconds
+      if (this.activationProgress > 1.0) this.activationProgress = 1.0;
+      this.updateBladeVisuals();
+    } else if (!this.active && this.activationProgress > 0.0) {
+      this.activationProgress -= deltaTime * 2; // Fully deactivate in 0.5 seconds
+      if (this.activationProgress < 0.0) this.activationProgress = 0.0;
+      this.updateBladeVisuals();
     }
     
-    // Update emitter position to blade tip
-    if (this.bladeEmitter) {
-      this.bladeEmitter.position.y = this.handleLength / 2 + this.bladeCurrentLength;
-    }
-    
-    // Update blade target
-    this.bladeTarget.position.y = this.handleLength / 2 + this.bladeCurrentLength;
-  }
-  
-  // Add method for creating trail when saber moves - used by Player
-  updateTrail(position: Vector3, isMoving: boolean): void {
-    // Would implement trail effect, but for now just a stub
-    if (isMoving && this.isActive) {
-      // Trail effect would go here
+    // Update glow emitter if exists
+    if (this.glowEmitter && this.activationProgress > 0) {
+      const emissionRate = 20 * this.activationProgress;
+      this.glowEmitter.setActive(emissionRate > 0);
     }
   }
   
-  // Add swing method for Player
-  swing(intensity: number = 1.0): void {
-    // Would implement swing effect/sound, but for now just a stub
-    console.log(`Lightsaber swing with intensity ${intensity}`);
-  }
-  
-  // Add clash method for Player
-  clash(): void {
-    // Would implement clash effect/sound, but for now just a stub
-    console.log('Lightsaber clash');
-  }
-  
-  private updateBladeGeometry(): void {
-    // Create new geometry for the blade with the current length
-    const bladeGeometry = new CylinderGeometry(
-      0.015, // Blade radius
-      0.015,
-      this.bladeCurrentLength,
-      16, 1, false
-    );
-    
-    // Replace the blade geometry
-    this.blade.geometry.dispose();
-    this.blade.geometry = bladeGeometry;
-    
-    // Update blade position so the bottom stays at the handle
-    this.blade.position.y = this.handleLength / 2 + this.bladeCurrentLength / 2;
-  }
-  
-  setColor(color: string): void {
-    this.bladeColor = color;
-    
+  private updateBladeVisuals(): void {
     // Update blade material
-    const bladeMaterial = this.blade.material as MeshStandardMaterial;
-    bladeMaterial.color.set(color);
-    bladeMaterial.emissive.set(color);
+    const bladeMaterial = this.blade.material as MeshBasicMaterial;
+    bladeMaterial.opacity = this.activationProgress * 0.8;
     
-    // Update emitter color if we have one
-    if (this.bladeEmitter) {
-      this.bladeEmitter.setColor(color);
+    // Scale blade based on activation progress
+    this.blade.scale.y = this.activationProgress;
+    this.blade.position.y = this.hiltLength + (this.bladeLength * this.activationProgress) / 2;
+    
+    // Update light intensity
+    this.bladeLight.visible = this.activationProgress > 0;
+    this.bladeLight.intensity = this.activationProgress * 2;
+    
+    // Update glow emitter position
+    if (this.glowEmitter) {
+      this.glowEmitter.position.y = this.hiltLength + (this.bladeLength * this.activationProgress) / 2;
     }
   }
   
-  getBladeTopPosition(): Vector3 {
-    const tipPosition = new Vector3(0, this.handleLength / 2 + this.bladeCurrentLength, 0);
-    return this.localToWorld(tipPosition.clone());
+  activate(): void {
+    if (!this.active) {
+      this.active = true;
+      
+      // Play activation sound
+      gameAudio.playSound('lightsaberOn', { volume: 0.5 });
+      
+      // Create glow emitter if not already created
+      if (!this.glowEmitter) {
+        this.createGlowEmitter();
+      }
+    }
   }
   
-  getBladeBasePosition(): Vector3 {
-    const basePosition = new Vector3(0, this.handleLength / 2, 0);
-    return this.localToWorld(basePosition.clone());
+  deactivate(): void {
+    if (this.active) {
+      this.active = false;
+      
+      // Play deactivation sound
+      gameAudio.playSound('lightsaberOff', { volume: 0.5 });
+    }
   }
   
-  // Add method to match expected call in player.ts
-  getBladeEndPosition(): Vector3 {
-    return this.getBladeTopPosition();
+  isActive(): boolean {
+    return this.active;
+  }
+  
+  getColor(): string {
+    return this.bladeColor;
+  }
+  
+  playSwingSound(): void {
+    gameAudio.playSound('lightsaberSwing', { volume: 0.3 });
+  }
+  
+  playClashSound(): void {
+    gameAudio.playSound('lightsaberClash', { volume: 0.7 });
   }
   
   getSaberTipPosition(): Vector3 {
-    return this.getBladeTopPosition();
+    // Get the position of the tip of the saber in world space
+    const tipLocalPosition = new Vector3(0, this.hiltLength + this.bladeLength * this.activationProgress, 0);
+    const tipWorldPosition = tipLocalPosition.clone();
+    this.localToWorld(tipWorldPosition);
+    return tipWorldPosition;
   }
   
-  isLightsaberActive(): boolean {
-    return this.isActive;
+  getSaberBasePosition(): Vector3 {
+    // Get the position of the base of the blade in world space
+    const baseLocalPosition = new Vector3(0, this.hiltLength, 0);
+    const baseWorldPosition = baseLocalPosition.clone();
+    this.localToWorld(baseWorldPosition);
+    return baseWorldPosition;
+  }
+  
+  // Add compatibility with Object3D
+  localToWorld(vector: Vector3): Vector3 {
+    return vector.applyMatrix4(this.matrixWorld);
   }
 }
