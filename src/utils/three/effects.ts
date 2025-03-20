@@ -288,3 +288,63 @@ export function createSaberClashEffect(scene: Scene, position: Vector3, color: s
   
   updateFlash();
 }
+
+// Add missing createHitEffect function
+export function createHitEffect(scene: Scene, position: Vector3, color: string): void {
+  // Similar to clash effect but with different parameters
+  const emitter = new ParticleEmitter({
+    maxParticles: 30,
+    particleSize: 0.04,
+    particleColor: color,
+    emissionRate: 80,
+    particleLifetime: 0.4,
+    spread: 0.3
+  });
+  
+  emitter.position.copy(position);
+  scene.add(emitter);
+  
+  // Emit particles
+  emitter.update(0.3);
+  
+  // Create a smaller flash
+  const flashGeometry = new SphereGeometry(0.15, 12, 12);
+  const flashMaterial = new MeshBasicMaterial({
+    color: new Color(color),
+    transparent: true,
+    opacity: 0.8,
+    blending: AdditiveBlending
+  });
+  
+  const flash = new Mesh(flashGeometry, flashMaterial);
+  flash.position.copy(position);
+  scene.add(flash);
+  
+  // Animate and remove
+  let flashLifetime = 0;
+  const maxFlashLifetime = 0.2;
+  
+  function updateFlash() {
+    flashLifetime += 0.016;
+    
+    if (flashLifetime >= maxFlashLifetime) {
+      scene.remove(flash);
+      flashMaterial.dispose();
+      flashGeometry.dispose();
+      
+      setTimeout(() => {
+        scene.remove(emitter);
+      }, 400);
+      
+      return;
+    }
+    
+    const lifeRatio = flashLifetime / maxFlashLifetime;
+    flash.scale.set(1 + lifeRatio * 0.5, 1 + lifeRatio * 0.5, 1 + lifeRatio * 0.5);
+    flashMaterial.opacity = 0.8 * (1 - lifeRatio);
+    
+    requestAnimationFrame(updateFlash);
+  }
+  
+  updateFlash();
+}

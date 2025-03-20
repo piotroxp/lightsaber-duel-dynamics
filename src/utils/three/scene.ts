@@ -219,9 +219,11 @@ export class GameScene {
   private createEnemies(): void {
     // Create an enemy
     const enemy = new Enemy(this.scene);
-    enemy.position.set(0, 0, -5);
     this.scene.add(enemy);
     this.enemies.push(enemy);
+    
+    // Position the enemy
+    enemy.position.set(0, 0, -5);
     
     // Add enemy to combat system
     this.combatSystem.addEnemy(enemy);
@@ -310,9 +312,7 @@ export class GameScene {
     
     // Stop audio
     this.stopBackgroundMusic();
-    if (gameAudio.stopAll) {
-      gameAudio.stopAll();
-    }
+    gameAudio.stopAll();
     
     // Remove event listeners
     window.removeEventListener('resize', this.onWindowResize.bind(this));

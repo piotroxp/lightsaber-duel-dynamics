@@ -1,3 +1,4 @@
+
 import {
   Camera,
   Vector3,
@@ -73,8 +74,8 @@ export class Player {
     
     // Setup lightsaber
     this.lightsaber = new Lightsaber({
-      bladeColor: '#0088ff',
-      length: 1.0,
+      color: '#0088ff',
+      bladeLength: 1.0,
     });
     
     // Create a group for the saber to control its position/rotation
@@ -85,7 +86,7 @@ export class Player {
     this.camera.add(this.saberGroup);
     
     // Activate the lightsaber
-    this.lightsaber.activateBlade();
+    this.lightsaber.activate();
     
     // Create player collider (invisible)
     const colliderGeometry = new BoxGeometry(0.6, 2, 0.6);
@@ -276,10 +277,8 @@ export class Player {
     this.saberGroup.position.lerp(this.targetSaberPosition, 10 * delta);
     this.saberGroup.quaternion.slerp(this.targetSaberRotation, 10 * delta);
     
-    // Update lightsaber trail
-    const isMoving = this.state.attacking || 
-                     (this.velocity.x !== 0 || this.velocity.z !== 0);
-    this.lightsaber.updateTrail(this.camera.position, isMoving);
+    // Update lightsaber
+    this.lightsaber.update(delta);
     
     // Update staggered state
     if (this.state.staggered && time - this.state.lastAttackTime > 1000) {
@@ -300,7 +299,7 @@ export class Player {
     this.state.lastAttackTime = time;
     
     // Generate swing sound
-    this.lightsaber.swing(1.0);
+    gameAudio.playSound('lightsaberSwing', { volume: 0.7 });
     
     // Set target position and rotation for attack swing
     this.targetSaberPosition.set(0.8, 0.3, -0.5);
@@ -308,18 +307,6 @@ export class Player {
       new Vector3(0, 0, 1),
       -Math.PI / 3
     );
-    
-    // Create a raycaster for attack hit detection
-    const raycaster = new Raycaster();
-    const attackDistance = 2.5;
-    
-    // Set raycaster origin and direction
-    raycaster.set(
-      this.camera.position,
-      new Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion)
-    );
-    
-    // We're not returning anything here
   }
   
   block(isBlocking: boolean): void {
@@ -345,7 +332,7 @@ export class Player {
     if (actualDamage > 0) {
       // Play hit sound
       if (this.state.blocking) {
-        this.lightsaber.clash();
+        gameAudio.playSound('lightsaberClash', { volume: 0.6 });
         
         // Create effect if source position is provided
         if (source) {
@@ -379,13 +366,11 @@ export class Player {
   }
   
   getSaberPosition(): Vector3 {
-    const position = this.lightsaber.getBladeEndPosition();
-    return position;
+    return this.lightsaber.getBladeTopPosition();
   }
   
   getSaberTipPosition(): Vector3 {
-    const position = this.lightsaber.getBladeEndPosition();
-    return position;
+    return this.lightsaber.getBladeTopPosition();
   }
   
   isBlocking(): boolean {

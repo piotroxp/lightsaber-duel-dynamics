@@ -106,6 +106,11 @@ export class Lightsaber extends Group {
     }
   }
   
+  // Alias for activate for compatibility with player.ts
+  activateBlade(): void {
+    this.activate();
+  }
+  
   deactivate(): void {
     if (this.isActive) {
       this.isActive = false;
@@ -144,6 +149,26 @@ export class Lightsaber extends Group {
     
     // Update blade target
     this.bladeTarget.position.y = this.handleLength / 2 + this.bladeCurrentLength;
+  }
+  
+  // Add method for creating trail when saber moves - used by Player
+  updateTrail(position: Vector3, isMoving: boolean): void {
+    // Would implement trail effect, but for now just a stub
+    if (isMoving && this.isActive) {
+      // Trail effect would go here
+    }
+  }
+  
+  // Add swing method for Player
+  swing(intensity: number = 1.0): void {
+    // Would implement swing effect/sound, but for now just a stub
+    console.log(`Lightsaber swing with intensity ${intensity}`);
+  }
+  
+  // Add clash method for Player
+  clash(): void {
+    // Would implement clash effect/sound, but for now just a stub
+    console.log('Lightsaber clash');
   }
   
   private updateBladeGeometry(): void {
@@ -185,6 +210,11 @@ export class Lightsaber extends Group {
   getBladeBasePosition(): Vector3 {
     const basePosition = new Vector3(0, this.handleLength / 2, 0);
     return this.localToWorld(basePosition.clone());
+  }
+  
+  // Add method to match expected call in player.ts
+  getBladeEndPosition(): Vector3 {
+    return this.getBladeTopPosition();
   }
   
   getSaberTipPosition(): Vector3 {
