@@ -20,7 +20,7 @@ interface Particle {
   active: boolean;
 }
 
-// Changed to extend Group instead of Object3D for better compatibility
+// Changed to extend Group to properly inherit position and other properties
 export class ParticleEmitter extends Group {
   private particles: Particle[] = [];
   private geometry: BufferGeometry;

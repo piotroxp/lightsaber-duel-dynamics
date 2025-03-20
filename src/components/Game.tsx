@@ -39,7 +39,8 @@ const Game: React.FC = () => {
       const onLoadComplete = () => {
         setTimeout(() => {
           setGameState(prev => ({ ...prev, isLoading: false }));
-          gameSceneRef.current?.startBackgroundMusic();
+          // Don't start music until user interaction
+          // gameSceneRef.current?.startBackgroundMusic();
         }, 1000);
       };
       
@@ -121,9 +122,12 @@ const Game: React.FC = () => {
   
   // Handle user interaction to resume audio context
   const handleUserInteraction = () => {
+    // Resume the audio context to fix browser autoplay policy issues
     gameAudio.resumeAudio();
     
+    // Start background music after user interaction
     if (gameSceneRef.current) {
+      gameSceneRef.current.startBackgroundMusic();
       gameSceneRef.current.lockControls();
     }
   };
@@ -157,6 +161,7 @@ const Game: React.FC = () => {
               <p className="text-lg">Click to lock mouse controls</p>
               <p className="text-sm mt-2">WASD to move, Mouse to look</p>
               <p className="text-sm">Left-click to attack, Right-click to block</p>
+              <p className="text-sm mt-2">Click anywhere to start audio</p>
             </motion.div>
           )}
           
