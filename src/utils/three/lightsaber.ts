@@ -8,6 +8,7 @@ export interface LightsaberOptions {
   handleLength?: number;
   handleRadius?: number;
   bladeRadius?: number;
+  bladeColor?: string; // Adding this for compatibility
 }
 
 export class Lightsaber extends Group {
@@ -26,7 +27,7 @@ export class Lightsaber extends Group {
   constructor(options: LightsaberOptions = {}) {
     super();
     
-    this.bladeColor = options.color || '#3366ff';
+    this.bladeColor = options.color || options.bladeColor || '#3366ff';
     this.bladeLength = options.bladeLength || 1.0;
     this.handleLength = options.handleLength || 0.2;
     const handleRadius = options.handleRadius || 0.025;

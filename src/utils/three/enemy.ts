@@ -1,3 +1,4 @@
+
 import { Group, Scene, Vector3, Mesh, BoxGeometry, MeshStandardMaterial, SphereGeometry, CylinderGeometry, Color, Quaternion, Euler, MathUtils } from 'three';
 import { Lightsaber } from './lightsaber';
 import { createSaberClashEffect } from './effects';
@@ -368,7 +369,8 @@ export class Enemy extends Group {
         
         // Create a clash effect at the lightsaber position
         const clashPosition = this.lightsaber.getSaberTipPosition();
-        createSaberClashEffect(this.parent as Scene, clashPosition, '#ff8800');
+        const sceneParent = this.parent as Scene;
+        createSaberClashEffect(sceneParent, clashPosition, '#ff8800');
       }
     }
     
@@ -383,7 +385,7 @@ export class Enemy extends Group {
     }
     
     // Check for death
-    if (this.health <= 0 && this.state !== EnemyState.DEAD) {
+    if (this.health <= 0) {
       this.health = 0;
       this.die();
     }

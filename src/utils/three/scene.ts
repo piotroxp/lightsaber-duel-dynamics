@@ -1,4 +1,3 @@
-
 import {
   Scene,
   WebGLRenderer,
@@ -223,7 +222,11 @@ export class GameScene {
     this.enemies.push(enemy);
     
     // Position the enemy
-    enemy.position.set(0, 0, -5);
+    enemy.position.set(
+      (Math.random() - 0.5) * 8,
+      0,
+      (Math.random() - 0.5) * 8
+    );
     
     // Add enemy to combat system
     this.combatSystem.addEnemy(enemy);
