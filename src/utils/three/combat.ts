@@ -1,4 +1,3 @@
-
 import { Vector3, Scene } from 'three';
 import { Player } from './player';
 import { Enemy } from './enemy';
@@ -77,8 +76,7 @@ export class CombatSystem {
       for (const enemy of this.enemies) {
         if (!enemy.isAlive()) continue;
         
-        const enemyPosition = enemy.position.clone();
-        enemyPosition.y += 1.0; // Adjust to hit center of enemy
+        const enemyPosition = new Vector3(enemy.position.x, enemy.position.y + 1.0, enemy.position.z);
         
         // Calculate vector from player to enemy
         const toEnemy = new Vector3().subVectors(enemyPosition, playerPosition);

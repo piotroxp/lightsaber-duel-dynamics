@@ -1,4 +1,3 @@
-
 import {
   Camera,
   Vector3,
@@ -320,13 +319,7 @@ export class Player {
       new Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion)
     );
     
-    // Return attack data for game logic to handle
-    return {
-      position: this.camera.position.clone(),
-      direction: new Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion),
-      range: attackDistance,
-      damage: 20
-    };
+    // We're not returning anything here
   }
   
   block(isBlocking: boolean): void {
