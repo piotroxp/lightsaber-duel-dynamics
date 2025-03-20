@@ -1,14 +1,16 @@
-
-import { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import gameAudio from '../utils/three/audio';
 
 interface LoadingScreenProps {
   progress: number;
   isLoaded: boolean;
+  onStart: () => void;
 }
 
-const LoadingScreen = ({ progress, isLoaded }: LoadingScreenProps) => {
+const LoadingScreen: React.FC<LoadingScreenProps> = ({ progress, isLoaded, onStart }) => {
   const [showTip, setShowTip] = useState(0);
+  const [showStartButton, setShowStartButton] = useState(false);
   
   const tips = [
     "Move with WASD, look around with your mouse",
@@ -23,9 +25,20 @@ const LoadingScreen = ({ progress, isLoaded }: LoadingScreenProps) => {
       setShowTip(prev => (prev + 1) % tips.length);
     }, 3000);
     
+    if (isLoaded) {
+      setShowStartButton(true);
+    }
+    
     return () => clearInterval(interval);
-  }, []);
-
+  }, [isLoaded]);
+  
+  const handleStart = () => {
+    // Initialize audio
+    gameAudio.initialize();
+    // Call the onStart callback
+    onStart();
+  };
+  
   return (
     <div className={`loading-screen ${isLoaded ? 'loaded' : ''}`}>
       <motion.div 
@@ -66,6 +79,15 @@ const LoadingScreen = ({ progress, isLoaded }: LoadingScreenProps) => {
           {tips[showTip]}
         </motion.div>
       </motion.div>
+      
+      {showStartButton && (
+        <button 
+          className="start-button"
+          onClick={handleStart}
+        >
+          Click to Start
+        </button>
+      )}
     </div>
   );
 };

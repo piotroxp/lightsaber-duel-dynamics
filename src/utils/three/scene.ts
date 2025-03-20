@@ -100,27 +100,53 @@ export class GameScene {
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
     
-    // Load assets with proper error handling
     try {
-      await this.loadAssets();
+      // Report starting progress
+      this.onLoadProgress(0.1);
+      
+      // Load assets with proper error handling
+      try {
+        await this.loadAssets();
+      } catch (error) {
+        console.error("Error loading assets:", error);
+        // Continue anyway to allow the game to start
+      }
+      
+      // Report progress
+      this.onLoadProgress(0.6);
       
       // Setup lighting
       this.setupLighting();
       
+      // Report progress
+      this.onLoadProgress(0.7);
+      
       // Create environment
       this.createEnvironment();
       
+      // Report progress
+      this.onLoadProgress(0.8);
+      
       // Create enemies
       this.createEnemies();
+      
+      // Report progress
+      this.onLoadProgress(0.9);
       
       // Start animation loop
       this.animate();
       
       this.isInitialized = true;
-      console.log("Game scene initialized successfully");
+      
+      // Report completion
+      this.onLoadProgress(1.0);
       this.onLoadComplete();
+      
     } catch (error) {
-      console.error("Error initializing game scene:", error);
+      console.error("Error during initialization:", error);
+      // Try to complete loading anyway
+      this.onLoadProgress(1.0);
+      this.onLoadComplete();
     }
   }
   
@@ -321,7 +347,7 @@ export class GameScene {
   }
   
   lockControls(): void {
-    if (!this.controls.isLocked) {
+    if (this.controls && !this.controls.isLocked) {
       this.controls.lock();
     }
   }

@@ -163,12 +163,16 @@ export class Lightsaber extends Group {
     gameAudio.playSound('lightsaberClash', { volume: 0.7 });
   }
   
-  getSaberTipPosition(): Vector3 {
+  getBladeTopPosition(): Vector3 {
     // Get the position of the tip of the saber in world space
     const tipLocalPosition = new Vector3(0, this.hiltLength + this.bladeLength * this.activationProgress, 0);
     const tipWorldPosition = tipLocalPosition.clone();
     this.localToWorld(tipWorldPosition);
     return tipWorldPosition;
+  }
+  
+  getSaberTipPosition(): Vector3 {
+    return this.getBladeTopPosition();
   }
   
   getSaberBasePosition(): Vector3 {

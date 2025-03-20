@@ -19,22 +19,27 @@ interface Particle {
   active: boolean;
 }
 
-// Need to properly extend THREE.Group
-export class ParticleEmitter extends Group {
-  private particles: Particle[] = [];
-  private geometry: BufferGeometry;
-  private material: PointsMaterial;
-  private points: Points;
+export class ParticleEmitter extends Object3D {
   private maxParticles: number;
+  private particleSize: number;
+  private particleColor: string;
   private emissionRate: number;
   private particleLifetime: number;
-  private gravity: Vector3;
   private spread: number;
-  private active: boolean = true;
-  private timeSinceLastEmission: number = 0;
+  private active: boolean = false;
+  private particles: any[] = []; // Replace with your Particle type
+  private gravity: Vector3;
   
-  constructor(options: ParticleOptions = {}) {
-    super(); // Call Group constructor
+  constructor(options: {
+    maxParticles?: number;
+    particleSize?: number;
+    particleColor?: string;
+    emissionRate?: number;
+    particleLifetime?: number;
+    spread?: number;
+    gravity?: Vector3;
+  }) {
+    super(); // Call parent constructor
     
     this.maxParticles = options.maxParticles || 100;
     this.emissionRate = options.emissionRate || 10; // particles per second

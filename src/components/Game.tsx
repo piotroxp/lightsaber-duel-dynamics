@@ -13,6 +13,7 @@ interface GameState {
   enemyMaxHealth: number;
   gameOver: boolean;
   victory: boolean;
+  isStarted: boolean;
 }
 
 const Game: React.FC = () => {
@@ -27,6 +28,7 @@ const Game: React.FC = () => {
     enemyMaxHealth: 100,
     gameOver: false,
     victory: false,
+    isStarted: false
   });
   
   const initializeGame = async () => {
@@ -125,17 +127,33 @@ const Game: React.FC = () => {
     }
   };
   
+  const handleGameStart = () => {
+    setGameState(prev => ({
+      ...prev,
+      isStarted: true
+    }));
+    
+    // Lock controls to start the game
+    if (gameSceneRef.current) {
+      gameSceneRef.current.lockControls();
+    }
+  };
+  
   return (
     <div className="relative w-full h-screen overflow-hidden">
-      <LoadingScreen 
-        progress={gameState.loadingProgress} 
-        isLoaded={!gameState.isLoading} 
-      />
+      {(gameState.isLoading || !gameState.isStarted) && (
+        <LoadingScreen 
+          progress={gameState.loadingProgress} 
+          isLoaded={!gameState.isLoading}
+          onStart={handleGameStart}
+        />
+      )}
       
       <div 
         ref={containerRef} 
         className="w-full h-full" 
         onClick={handleUserInteraction}
+        style={{ display: gameState.isStarted ? 'block' : 'none' }}
       />
       
       {!gameState.isLoading && (
