@@ -1,3 +1,4 @@
+
 import {
   Scene,
   WebGLRenderer,
@@ -227,7 +228,7 @@ export class GameScene {
     // Create an enemy
     const enemy = new Enemy(this.scene);
     
-    // Position the enemy (this should work since Enemy extends Group)
+    // Set the enemy's position
     enemy.position.set(
       (Math.random() - 0.5) * 8,
       0,

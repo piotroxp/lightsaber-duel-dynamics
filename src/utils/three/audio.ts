@@ -1,3 +1,4 @@
+
 import { Audio, AudioListener, AudioLoader, PositionalAudio } from 'three';
 
 interface SoundOptions {
@@ -17,6 +18,7 @@ class GameAudio {
   private audioContext: AudioContext | null = null;
   private soundSources: Audio[] = [];
   private isInitialized: boolean = false;
+  private resumeAudioContext: () => void = () => {};
 
   async initialize(onProgress?: (progress: number) => void): Promise<void> {
     // Create audio listener
@@ -26,12 +28,42 @@ class GameAudio {
     // Create audio context
     try {
       this.audioContext = new AudioContext();
+      
+      // Add event listeners to resume AudioContext on user interaction
+      // This is needed because browsers require user interaction to start audio
+      this.setupAudioContextResumeListeners();
     } catch (e) {
       console.error('Web Audio API is not supported in this browser', e);
     }
 
     // Load sounds
     await this.loadSounds(onProgress);
+  }
+
+  private setupAudioContextResumeListeners(): void {
+    if (!this.audioContext) return;
+
+    const resumeAudio = () => {
+      if (this.audioContext?.state === 'suspended') {
+        this.audioContext.resume().then(() => {
+          console.log('AudioContext resumed successfully');
+        }).catch(error => {
+          console.error('Failed to resume AudioContext:', error);
+        });
+      }
+    };
+
+    this.resumeAudioContext = resumeAudio;
+
+    // Add event listeners to resume the audio context on user interaction
+    const events = ['click', 'touchstart', 'keydown'];
+    events.forEach(event => {
+      document.addEventListener(event, resumeAudio, { once: true });
+    });
+  }
+
+  public resumeAudio(): void {
+    this.resumeAudioContext();
   }
 
   private async loadSounds(onProgress?: (progress: number) => void): Promise<void> {
@@ -73,6 +105,9 @@ class GameAudio {
       console.warn('Audio system not initialized');
       return null;
     }
+    
+    // Try to resume audio context if needed
+    this.resumeAudio();
     
     const sound = this.sounds.get(name);
     if (!sound || !sound.isLoaded) {

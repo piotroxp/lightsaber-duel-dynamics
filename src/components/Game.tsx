@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import LoadingScreen from './LoadingScreen';
 import { GameScene } from '@/utils/three/scene';
+import gameAudio from '@/utils/three/audio';
 
 interface GameState {
   isLoading: boolean;
@@ -118,6 +119,15 @@ const Game: React.FC = () => {
     window.location.reload();
   };
   
+  // Handle user interaction to resume audio context
+  const handleUserInteraction = () => {
+    gameAudio.resumeAudio();
+    
+    if (gameSceneRef.current) {
+      gameSceneRef.current.lockControls();
+    }
+  };
+  
   return (
     <div className="relative w-full h-screen overflow-hidden">
       {/* Loading screen */}
@@ -127,7 +137,11 @@ const Game: React.FC = () => {
       />
       
       {/* Game container */}
-      <div ref={containerRef} className="w-full h-full" />
+      <div 
+        ref={containerRef} 
+        className="w-full h-full" 
+        onClick={handleUserInteraction}
+      />
       
       {/* Game UI */}
       {!gameState.isLoading && (
