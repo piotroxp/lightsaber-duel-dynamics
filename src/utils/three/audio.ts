@@ -1,5 +1,5 @@
 
-import { AudioListener, Audio, AudioLoader, PositionalAudio } from 'three';
+import { AudioListener, Audio, AudioLoader, PositionalAudio, AudioBuffer } from 'three';
 
 export class GameAudio {
   private sounds: Map<string, AudioBuffer> = new Map();
@@ -16,6 +16,37 @@ export class GameAudio {
   
   getListener(): AudioListener {
     return this.listener;
+  }
+  
+  async initialize(onProgress: (progress: number) => void = () => {}): Promise<void> {
+    // Load all game sounds
+    const soundsToLoad = [
+      { name: 'lightsaberOn', path: '/sounds/lightsaber_on.mp3' },
+      { name: 'lightsaberOff', path: '/sounds/lightsaber_off.mp3' },
+      { name: 'lightsaberHum', path: '/sounds/lightsaber_hum.mp3' },
+      { name: 'lightsaberClash', path: '/sounds/lightsaber_clash.mp3' },
+      { name: 'enemyHit', path: '/sounds/enemy_hit.mp3' },
+      { name: 'playerHit', path: '/sounds/player_hit.mp3' },
+      { name: 'backgroundMusic', path: '/sounds/background_music.mp3' }
+    ];
+    
+    // Using placeholder paths - in production, these would be actual sound files
+    for (let i = 0; i < soundsToLoad.length; i++) {
+      try {
+        // For demonstration, we'll create empty audio buffers
+        // In a real application, replace this with actual sound loading
+        const context = new (window.AudioContext || window.webkitAudioContext)();
+        const emptyBuffer = context.createBuffer(2, 44100, 44100);
+        this.sounds.set(soundsToLoad[i].name, emptyBuffer as unknown as AudioBuffer);
+        
+        // Report progress
+        onProgress((i + 1) / soundsToLoad.length);
+      } catch (error) {
+        console.error(`Failed to load sound ${soundsToLoad[i].name}:`, error);
+      }
+    }
+    
+    return Promise.resolve();
   }
   
   async loadSound(name: string, path: string): Promise<void> {
@@ -140,6 +171,30 @@ export class GameAudio {
     }
     
     return sound;
+  }
+  
+  stopAll(): void {
+    // Stop all sound effects
+    this.soundEffects.forEach(sound => {
+      if (sound.isPlaying) {
+        sound.stop();
+      }
+    });
+    this.soundEffects.clear();
+    
+    // Stop all positional sounds
+    this.positionalSounds.forEach(sound => {
+      if (sound.isPlaying) {
+        sound.stop();
+      }
+    });
+    this.positionalSounds.clear();
+    
+    // Stop music
+    if (this.currentMusic && this.currentMusic.isPlaying) {
+      this.currentMusic.stop();
+      this.currentMusic = null;
+    }
   }
   
   update(): void {

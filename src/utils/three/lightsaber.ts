@@ -1,234 +1,197 @@
 
-import {
-  Group,
-  CylinderGeometry,
-  MeshStandardMaterial,
-  Mesh,
-  Color,
-  PointLight,
-  Vector3,
-  BufferGeometry,
-  Line,
-  LineBasicMaterial,
-  MeshPhongMaterial,
-} from 'three';
-import gameAudio from './audio';
+import { Group, Vector3, Mesh, CylinderGeometry, MeshStandardMaterial, SphereGeometry, Object3D, Color } from 'three';
+import { ParticleEmitter } from './effects';
 
 export interface LightsaberOptions {
-  bladeColor: string;
-  hiltColor?: string;
-  length?: number;
-  hiltLength?: number;
+  color?: string;
+  bladeLength?: number;
+  handleLength?: number;
+  handleRadius?: number;
   bladeRadius?: number;
-  hiltRadius?: number;
-  intensity?: number;
 }
-
-const DEFAULT_OPTIONS: LightsaberOptions = {
-  bladeColor: '#0088ff', // Blue
-  hiltColor: '#777777',
-  length: 1.3,
-  hiltLength: 0.2,
-  bladeRadius: 0.02,
-  hiltRadius: 0.03,
-  intensity: 1.5,
-};
 
 export class Lightsaber extends Group {
   private blade: Mesh;
-  private hilt: Mesh;
-  private bladeLight: PointLight;
-  private trailGeometry: BufferGeometry;
-  private trail: Line;
-  private trailPositions: Vector3[];
-  private bladeColor: Color;
-  private active: boolean = false;
-  private options: LightsaberOptions;
-  private swingSound: any = null;
-  private humSound: any = null;
-
-  constructor(options: Partial<LightsaberOptions> = {}) {
+  private handle: Mesh;
+  private bladeEmitter: ParticleEmitter | null = null;
+  private bladeColor: string;
+  private isActive: boolean = false;
+  private bladeLength: number;
+  private handleLength: number;
+  private bladeFullLength: number;
+  private bladeCurrentLength: number = 0;
+  private activationSpeed: number = 5; // Units per second
+  private bladeTarget: Object3D;
+  
+  constructor(options: LightsaberOptions = {}) {
     super();
-    this.options = { ...DEFAULT_OPTIONS, ...options };
-    this.bladeColor = new Color(this.options.bladeColor);
     
-    // Create hilt
-    const hiltGeometry = new CylinderGeometry(
-      this.options.hiltRadius!,
-      this.options.hiltRadius! * 0.8,
-      this.options.hiltLength!,
-      16
+    this.bladeColor = options.color || '#3366ff';
+    this.bladeLength = options.bladeLength || 1.0;
+    this.handleLength = options.handleLength || 0.2;
+    const handleRadius = options.handleRadius || 0.025;
+    const bladeRadius = options.bladeRadius || 0.015;
+    
+    this.bladeFullLength = this.bladeLength;
+    
+    // Create handle
+    const handleGeometry = new CylinderGeometry(
+      handleRadius,
+      handleRadius,
+      this.handleLength,
+      16, 1, false
     );
-    const hiltMaterial = new MeshStandardMaterial({
-      color: this.options.hiltColor,
-      metalness: 0.8,
-      roughness: 0.2,
+    const handleMaterial = new MeshStandardMaterial({
+      color: 0x222222,
+      roughness: 0.7,
+      metalness: 0.8
     });
-    this.hilt = new Mesh(hiltGeometry, hiltMaterial);
-    this.hilt.rotation.x = Math.PI / 2;
-    this.add(this.hilt);
+    this.handle = new Mesh(handleGeometry, handleMaterial);
+    this.handle.castShadow = true;
     
-    // Create blade (initially inactive)
+    // Create blade (initially invisible with zero length)
     const bladeGeometry = new CylinderGeometry(
-      this.options.bladeRadius!,
-      this.options.bladeRadius!,
-      this.options.length!,
-      16
+      bladeRadius,
+      bladeRadius,
+      0.001, // Start with minimal length
+      16, 1, false
     );
-    const bladeMaterial = new MeshPhongMaterial({
-      color: this.bladeColor,
-      emissive: this.bladeColor,
+    const bladeMaterial = new MeshStandardMaterial({
+      color: new Color(this.bladeColor),
+      emissive: new Color(this.bladeColor),
       emissiveIntensity: 1.0,
-      transparent: true,
-      opacity: 0.9,
-      shininess: 100,
+      roughness: 0.3,
+      metalness: 0.7
     });
     this.blade = new Mesh(bladeGeometry, bladeMaterial);
-    this.blade.position.z = -this.options.length! / 2 + 0.05;
-    this.blade.rotation.x = Math.PI / 2;
-    this.blade.visible = false;
+    this.blade.castShadow = true;
+    
+    // Position handle at the bottom
+    this.handle.position.y = 0;
+    this.add(this.handle);
+    
+    // Position blade on top of handle
+    this.blade.position.y = this.handleLength / 2;
     this.add(this.blade);
     
-    // Create blade light
-    this.bladeLight = new PointLight(
-      this.bladeColor,
-      this.options.intensity,
-      1.0
-    );
-    this.bladeLight.position.z = -this.options.length! / 2;
-    this.bladeLight.visible = false;
-    this.add(this.bladeLight);
+    // Create blade tip target for tracking
+    this.bladeTarget = new Object3D();
+    this.bladeTarget.position.y = this.handleLength / 2 + this.bladeFullLength;
+    this.add(this.bladeTarget);
     
-    // Create trail effect
-    this.trailPositions = [];
-    const maxTrailPoints = 20;
-    for (let i = 0; i < maxTrailPoints; i++) {
-      this.trailPositions.push(new Vector3(0, 0, 0));
-    }
-    
-    this.trailGeometry = new BufferGeometry().setFromPoints(this.trailPositions);
-    const trailMaterial = new LineBasicMaterial({
-      color: this.bladeColor,
-      transparent: true,
-      opacity: 0.5,
-      linewidth: 1
+    // Create emitter at blade tip (will be active only when blade is on)
+    const emitter = new ParticleEmitter({
+      maxParticles: 100,
+      particleSize: 0.03,
+      particleColor: this.bladeColor,
+      emissionRate: 10,
+      particleLifetime: 0.3,
+      gravity: new Vector3(0, 0, 0),
+      spread: 0.1
     });
-    
-    this.trail = new Line(this.trailGeometry, trailMaterial);
-    this.trail.visible = false;
-    this.add(this.trail);
+    emitter.position.y = this.handleLength / 2 + this.bladeFullLength;
+    this.add(emitter);
+    this.bladeEmitter = emitter;
+    this.bladeEmitter.setActive(false);
   }
   
-  activateBlade(): void {
-    if (this.active) return;
-    
-    this.blade.visible = true;
-    this.bladeLight.visible = true;
-    this.trail.visible = true;
-    this.active = true;
-    
-    const igniteSound = gameAudio.playSound('lightsaberOn', { volume: 0.7 });
-    this.humSound = gameAudio.playSound('lightsaberHum', { loop: true, volume: 0.3 });
-  }
-  
-  deactivateBlade(): void {
-    if (!this.active) return;
-    
-    this.blade.visible = false;
-    this.bladeLight.visible = false;
-    this.trail.visible = false;
-    this.active = false;
-    
-    const deactivateSound = gameAudio.playSound('lightsaberOff', { volume: 0.7 });
-    
-    if (this.humSound) {
-      this.humSound.stop();
-      this.humSound = null;
-    }
-  }
-  
-  swing(intensity = 1.0): void {
-    if (!this.active) return;
-    
-    if (this.swingSound) {
-      this.swingSound.stop();
-    }
-    
-    this.swingSound = gameAudio.playSound('lightsaberSwing', {
-      volume: 0.5 * intensity
-    });
-  }
-  
-  clash(): void {
-    if (!this.active) return;
-    
-    gameAudio.playSound('lightsaberClash', { volume: 0.8 });
-    
-    // Flash the blade briefly
-    const originalEmissiveIntensity = (this.blade.material as MeshPhongMaterial).emissiveIntensity;
-    const originalLightIntensity = this.bladeLight.intensity;
-    
-    (this.blade.material as MeshPhongMaterial).emissiveIntensity = 2.0;
-    this.bladeLight.intensity = this.options.intensity! * 2;
-    
-    setTimeout(() => {
-      (this.blade.material as MeshPhongMaterial).emissiveIntensity = originalEmissiveIntensity;
-      this.bladeLight.intensity = originalLightIntensity;
-    }, 100);
-  }
-  
-  updateTrail(position: Vector3, isMoving: boolean): void {
-    if (!this.active) return;
-    
-    if (isMoving) {
-      // Get blade tip position in world space
-      const tipPosition = this.getBladeEndPosition();
+  activate(): void {
+    if (!this.isActive) {
+      this.isActive = true;
       
-      // Add new position to the beginning of the array
-      this.trailPositions.unshift(tipPosition.clone());
-      
-      // Remove the last position
-      this.trailPositions.pop();
-      
-      // Update the trail geometry
-      this.trailGeometry.setFromPoints(this.trailPositions);
-      this.trail.visible = true;
-    } else {
-      // Reset trail when not moving
-      const tipPosition = this.getBladeEndPosition();
-      for (let i = 0; i < this.trailPositions.length; i++) {
-        this.trailPositions[i].copy(tipPosition);
+      // If we have an emitter, activate it
+      if (this.bladeEmitter) {
+        this.bladeEmitter.setActive(true);
       }
-      this.trailGeometry.setFromPoints(this.trailPositions);
-      this.trail.visible = false;
     }
   }
   
-  getBladeEndPosition(): Vector3 {
-    // Calculate blade tip position
-    const tipPosition = new Vector3(0, 0, -this.options.length!);
-    return this.localToWorld(tipPosition.clone());
+  deactivate(): void {
+    if (this.isActive) {
+      this.isActive = false;
+      
+      // If we have an emitter, deactivate it
+      if (this.bladeEmitter) {
+        this.bladeEmitter.setActive(false);
+      }
+    }
   }
   
-  getHiltPosition(): Vector3 {
-    return this.localToWorld(new Vector3(0, 0, 0));
+  update(deltaTime: number): void {
+    // Handle lightsaber activation/deactivation animations
+    if (this.isActive && this.bladeCurrentLength < this.bladeFullLength) {
+      // Extend the blade
+      this.bladeCurrentLength += this.activationSpeed * deltaTime;
+      if (this.bladeCurrentLength > this.bladeFullLength) {
+        this.bladeCurrentLength = this.bladeFullLength;
+      }
+      
+      this.updateBladeGeometry();
+    } else if (!this.isActive && this.bladeCurrentLength > 0) {
+      // Retract the blade
+      this.bladeCurrentLength -= this.activationSpeed * deltaTime;
+      if (this.bladeCurrentLength < 0) {
+        this.bladeCurrentLength = 0;
+      }
+      
+      this.updateBladeGeometry();
+    }
+    
+    // Update emitter position to blade tip
+    if (this.bladeEmitter) {
+      this.bladeEmitter.position.y = this.handleLength / 2 + this.bladeCurrentLength;
+    }
+    
+    // Update blade target
+    this.bladeTarget.position.y = this.handleLength / 2 + this.bladeCurrentLength;
   }
   
-  isActive(): boolean {
-    return this.active;
+  private updateBladeGeometry(): void {
+    // Create new geometry for the blade with the current length
+    const bladeGeometry = new CylinderGeometry(
+      0.015, // Blade radius
+      0.015,
+      this.bladeCurrentLength,
+      16, 1, false
+    );
+    
+    // Replace the blade geometry
+    this.blade.geometry.dispose();
+    this.blade.geometry = bladeGeometry;
+    
+    // Update blade position so the bottom stays at the handle
+    this.blade.position.y = this.handleLength / 2 + this.bladeCurrentLength / 2;
   }
   
   setColor(color: string): void {
-    this.bladeColor = new Color(color);
-    if (this.blade) {
-      (this.blade.material as MeshPhongMaterial).color = this.bladeColor;
-      (this.blade.material as MeshPhongMaterial).emissive = this.bladeColor;
+    this.bladeColor = color;
+    
+    // Update blade material
+    const bladeMaterial = this.blade.material as MeshStandardMaterial;
+    bladeMaterial.color.set(color);
+    bladeMaterial.emissive.set(color);
+    
+    // Update emitter color if we have one
+    if (this.bladeEmitter) {
+      this.bladeEmitter.setColor(color);
     }
-    if (this.bladeLight) {
-      this.bladeLight.color = this.bladeColor;
-    }
-    if (this.trail && this.trail.material) {
-      (this.trail.material as LineBasicMaterial).color = this.bladeColor;
-    }
+  }
+  
+  getBladeTopPosition(): Vector3 {
+    const topPosition = new Vector3(0, this.handleLength / 2 + this.bladeCurrentLength, 0);
+    return this.localToWorld(topPosition.clone());
+  }
+  
+  getBladeBasePosition(): Vector3 {
+    const basePosition = new Vector3(0, this.handleLength / 2, 0);
+    return this.localToWorld(basePosition.clone());
+  }
+  
+  getSaberTipPosition(): Vector3 {
+    return this.getBladeTopPosition();
+  }
+  
+  isLightsaberActive(): boolean {
+    return this.isActive;
   }
 }

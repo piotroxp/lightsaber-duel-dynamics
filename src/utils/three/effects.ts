@@ -1,228 +1,290 @@
-import {
-  Scene,
-  Vector3,
-  Points,
-  BufferGeometry,
-  Float32BufferAttribute,
-  PointsMaterial,
-  Group,
-  Color,
-  Object3D,
-} from 'three';
+
+import { Group, Scene, Vector3, Points, BufferGeometry, PointsMaterial, BufferAttribute, Color, Object3D, Mesh, SphereGeometry, MeshBasicMaterial, AdditiveBlending } from 'three';
 
 export interface ParticleOptions {
-  count: number;
-  color: string | Color;
-  size: number;
-  speed: number;
-  spread: number;
+  maxParticles?: number;
+  particleSize?: number;
+  particleColor?: string;
+  emissionRate?: number;
+  particleLifetime?: number;
+  gravity?: Vector3;
+  spread?: number;
+}
+
+interface Particle {
+  position: Vector3;
+  velocity: Vector3;
   lifetime: number;
-  gravity?: number;
+  maxLifetime: number;
+  size: number;
+  active: boolean;
+}
+
+export class ParticleEmitter extends Group {
+  private particles: Particle[] = [];
+  private geometry: BufferGeometry;
+  private material: PointsMaterial;
+  private points: Points;
+  private maxParticles: number;
+  private emissionRate: number;
+  private particleLifetime: number;
+  private gravity: Vector3;
+  private spread: number;
+  private active: boolean = true;
+  private timeSinceLastEmission: number = 0;
+  
+  constructor(options: ParticleOptions = {}) {
+    super();
+    
+    this.maxParticles = options.maxParticles || 100;
+    this.emissionRate = options.emissionRate || 10; // particles per second
+    this.particleLifetime = options.particleLifetime || 1.0; // seconds
+    this.gravity = options.gravity || new Vector3(0, -9.8, 0);
+    this.spread = options.spread || 0.5; // random spread factor
+    
+    // Initialize particle system
+    this.geometry = new BufferGeometry();
+    
+    // Create array of particle attributes
+    const positions = new Float32Array(this.maxParticles * 3); // x, y, z per particle
+    const sizes = new Float32Array(this.maxParticles);
+    const colors = new Float32Array(this.maxParticles * 3); // r, g, b per particle
+    const alphas = new Float32Array(this.maxParticles);
+    
+    // Initialize particles
+    const defaultColor = new Color(options.particleColor || '#ffffff');
+    const defaultSize = options.particleSize || 0.1;
+    
+    for (let i = 0; i < this.maxParticles; i++) {
+      // Initial position (all at emitter)
+      positions[i * 3] = 0;
+      positions[i * 3 + 1] = 0;
+      positions[i * 3 + 2] = 0;
+      
+      // Initial size
+      sizes[i] = defaultSize;
+      
+      // Initial color
+      colors[i * 3] = defaultColor.r;
+      colors[i * 3 + 1] = defaultColor.g;
+      colors[i * 3 + 2] = defaultColor.b;
+      
+      // Initial alpha (fully transparent for inactive particles)
+      alphas[i] = 0;
+      
+      // Create particle object
+      this.particles.push({
+        position: new Vector3(0, 0, 0),
+        velocity: new Vector3(0, 0, 0),
+        lifetime: 0,
+        maxLifetime: this.particleLifetime,
+        size: defaultSize,
+        active: false
+      });
+    }
+    
+    // Set attributes on geometry
+    this.geometry.setAttribute('position', new BufferAttribute(positions, 3));
+    this.geometry.setAttribute('size', new BufferAttribute(sizes, 1));
+    this.geometry.setAttribute('color', new BufferAttribute(colors, 3));
+    this.geometry.setAttribute('alpha', new BufferAttribute(alphas, 1));
+    
+    // Create material with custom shader for alpha control
+    this.material = new PointsMaterial({
+      size: defaultSize,
+      vertexColors: true,
+      transparent: true,
+      opacity: 1.0,
+      blending: AdditiveBlending,
+      depthWrite: false
+    });
+    
+    // Create points mesh
+    this.points = new Points(this.geometry, this.material);
+    this.add(this.points);
+  }
+  
+  setActive(active: boolean): void {
+    this.active = active;
+  }
+  
+  setColor(color: string): void {
+    const newColor = new Color(color);
+    const colorAttrib = this.geometry.getAttribute('color') as BufferAttribute;
+    
+    for (let i = 0; i < this.maxParticles; i++) {
+      colorAttrib.setXYZ(i, newColor.r, newColor.g, newColor.b);
+    }
+    
+    colorAttrib.needsUpdate = true;
+  }
+  
+  update(deltaTime: number): void {
+    if (!this.active) {
+      // Just fade out existing particles
+      this.updateParticles(deltaTime, false);
+      return;
+    }
+    
+    // Emit new particles based on rate
+    this.timeSinceLastEmission += deltaTime;
+    const particlesToEmit = Math.floor(this.timeSinceLastEmission * this.emissionRate);
+    
+    if (particlesToEmit > 0) {
+      this.timeSinceLastEmission -= particlesToEmit / this.emissionRate;
+      this.emitParticles(particlesToEmit);
+    }
+    
+    // Update existing particles
+    this.updateParticles(deltaTime, true);
+  }
+  
+  private emitParticles(count: number): void {
+    let emitted = 0;
+    
+    for (let i = 0; i < this.maxParticles && emitted < count; i++) {
+      if (!this.particles[i].active) {
+        // Reset and activate this particle
+        this.particles[i].position.set(0, 0, 0);
+        this.particles[i].velocity.set(
+          (Math.random() - 0.5) * this.spread,
+          (Math.random() - 0.5) * this.spread + 0.5, // Slightly upward bias
+          (Math.random() - 0.5) * this.spread
+        );
+        this.particles[i].lifetime = 0;
+        this.particles[i].active = true;
+        emitted++;
+      }
+    }
+  }
+  
+  private updateParticles(deltaTime: number, canEmitNew: boolean): void {
+    const positionAttrib = this.geometry.getAttribute('position') as BufferAttribute;
+    const alphaAttrib = this.geometry.getAttribute('alpha') as BufferAttribute;
+    
+    for (let i = 0; i < this.maxParticles; i++) {
+      const particle = this.particles[i];
+      
+      if (particle.active) {
+        // Update lifetime
+        particle.lifetime += deltaTime;
+        
+        if (particle.lifetime > particle.maxLifetime) {
+          // Deactivate if past lifetime
+          particle.active = false;
+          alphaAttrib.setX(i, 0);
+        } else {
+          // Update position
+          particle.velocity.add(this.gravity.clone().multiplyScalar(deltaTime));
+          particle.position.add(particle.velocity.clone().multiplyScalar(deltaTime));
+          
+          // Update attributes
+          positionAttrib.setXYZ(i, particle.position.x, particle.position.y, particle.position.z);
+          
+          // Fade out towards end of life
+          const lifeRatio = particle.lifetime / particle.maxLifetime;
+          const alpha = lifeRatio < 0.8 ? 1.0 : 1.0 - (lifeRatio - 0.8) / 0.2;
+          alphaAttrib.setX(i, alpha);
+        }
+      } else if (canEmitNew) {
+        // Deactivated particles are invisible
+        alphaAttrib.setX(i, 0);
+      }
+    }
+    
+    // Mark attributes for update
+    positionAttrib.needsUpdate = true;
+    alphaAttrib.needsUpdate = true;
+  }
 }
 
 export class ParticleSystem {
   private scene: Scene;
-  private particles: Group;
-  private systems: ParticleEmitter[] = [];
-
+  private emitters: ParticleEmitter[] = [];
+  
   constructor(scene: Scene) {
     this.scene = scene;
-    this.particles = new Group();
-    this.scene.add(this.particles);
   }
-
-  createEmitter(
-    position: Vector3,
-    options: ParticleOptions
-  ): ParticleEmitter {
+  
+  createEmitter(options: ParticleOptions = {}): ParticleEmitter {
     const emitter = new ParticleEmitter(options);
-    emitter.position.copy(position);
-    this.particles.add(emitter);
-    this.systems.push(emitter);
+    this.emitters.push(emitter);
+    this.scene.add(emitter);
     return emitter;
   }
-
+  
+  removeEmitter(emitter: ParticleEmitter): void {
+    const index = this.emitters.indexOf(emitter);
+    if (index !== -1) {
+      this.emitters.splice(index, 1);
+      this.scene.remove(emitter);
+    }
+  }
+  
   update(deltaTime: number): void {
-    // Update all particle systems and remove dead ones
-    for (let i = this.systems.length - 1; i >= 0; i--) {
-      const system = this.systems[i];
-      system.update(deltaTime);
-
-      if (system.isDead()) {
-        this.particles.remove(system);
-        this.systems.splice(i, 1);
-      }
+    for (const emitter of this.emitters) {
+      emitter.update(deltaTime);
     }
-  }
-}
-
-class ParticleEmitter extends Group {
-  private points: Points;
-  private geometry: BufferGeometry;
-  private material: PointsMaterial;
-  private velocities: number[] = [];
-  private lifetimes: number[] = [];
-  private maxLifetime: number;
-  private elapsedTime: number = 0;
-  private options: ParticleOptions;
-  private isDone: boolean = false;
-
-  constructor(options: ParticleOptions) {
-    super();
-    this.options = options;
-    this.maxLifetime = options.lifetime;
-
-    // Create geometry
-    this.geometry = new BufferGeometry();
-    const positions: number[] = [];
-    const sizes: number[] = [];
-    const colors: number[] = [];
-    this.velocities = [];
-    this.lifetimes = [];
-
-    const color = options.color instanceof Color 
-      ? options.color 
-      : new Color(options.color);
-
-    for (let i = 0; i < options.count; i++) {
-      // Initial position
-      positions.push(0, 0, 0);
-
-      // Random velocity
-      const angle = Math.random() * Math.PI * 2;
-      const speed = options.speed * (0.5 + Math.random() * 0.5);
-      const vx = Math.cos(angle) * speed * (Math.random() - 0.5) * 2 * options.spread;
-      const vy = Math.sin(angle) * speed * (Math.random() - 0.5) * 2 * options.spread;
-      const vz = Math.random() * speed * options.spread;
-      this.velocities.push(vx, vy, vz);
-
-      // Size
-      const size = options.size * (0.5 + Math.random() * 0.5);
-      sizes.push(size);
-
-      // Color with slight variation
-      const particleColor = color.clone();
-      particleColor.r += (Math.random() - 0.5) * 0.1;
-      particleColor.g += (Math.random() - 0.5) * 0.1;
-      particleColor.b += (Math.random() - 0.5) * 0.1;
-      colors.push(particleColor.r, particleColor.g, particleColor.b);
-
-      // Lifetime
-      this.lifetimes.push(options.lifetime * (0.8 + Math.random() * 0.4));
-    }
-
-    this.geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
-    this.geometry.setAttribute('customSize', new Float32BufferAttribute(sizes, 1));
-    this.geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
-
-    // Create material
-    this.material = new PointsMaterial({
-      size: 1,
-      vertexColors: true,
-      transparent: true,
-      opacity: 1,
-    });
-
-    // Create points
-    this.points = new Points(this.geometry, this.material);
-    this.add(this.points);
-  }
-
-  update(deltaTime: number): void {
-    if (this.isDone) return;
-
-    this.elapsedTime += deltaTime;
-    if (this.elapsedTime > this.maxLifetime) {
-      this.isDone = true;
-      return;
-    }
-
-    const positions = this.geometry.attributes.position.array as number[];
-    const sizes = this.geometry.attributes.customSize.array as number[];
-    let anyParticleAlive = false;
-
-    for (let i = 0; i < this.options.count; i++) {
-      const idx = i * 3;
-      const sizeIdx = i;
-      const velocityIdx = i * 3;
-      
-      // Update lifetime
-      this.lifetimes[i] -= deltaTime;
-      const normalizedLife = Math.max(0, this.lifetimes[i] / this.maxLifetime);
-      
-      if (this.lifetimes[i] > 0) {
-        anyParticleAlive = true;
-        
-        // Update position
-        positions[idx] += this.velocities[velocityIdx] * deltaTime;
-        positions[idx + 1] += this.velocities[velocityIdx + 1] * deltaTime;
-        positions[idx + 2] += this.velocities[velocityIdx + 2] * deltaTime;
-        
-        // Apply gravity if specified
-        if (this.options.gravity) {
-          this.velocities[velocityIdx + 1] -= this.options.gravity * deltaTime;
-        }
-        
-        // Update size
-        sizes[sizeIdx] = this.options.size * normalizedLife;
-        
-        // Update material opacity based on lifetime
-        this.material.opacity = Math.min(1, normalizedLife * 2);
-      }
-    }
-
-    if (!anyParticleAlive) {
-      this.isDone = true;
-    }
-
-    this.geometry.attributes.position.needsUpdate = true;
-    this.geometry.attributes.customSize.needsUpdate = true;
-  }
-
-  isDead(): boolean {
-    return this.isDone;
   }
 }
 
 export function createSaberClashEffect(scene: Scene, position: Vector3, color: string): void {
-  const particleSystem = new ParticleSystem(scene);
-  
-  // Create spark particles
-  particleSystem.createEmitter(position, {
-    count: 50,
-    color: color,
-    size: 0.02,
-    speed: 2,
-    spread: 1,
-    lifetime: 0.5,
-    gravity: 9.8
+  // Create a one-time particle emitter at the clash location
+  const emitter = new ParticleEmitter({
+    maxParticles: 50,
+    particleSize: 0.05,
+    particleColor: color,
+    emissionRate: 100,
+    particleLifetime: 0.5,
+    spread: 0.5
   });
   
-  // Create glow particles
-  particleSystem.createEmitter(position, {
-    count: 20,
-    color: '#ffffff',
-    size: 0.05,
-    speed: 1,
-    spread: 0.5,
-    lifetime: 0.3
-  });
-}
-
-export function createHitEffect(scene: Scene, position: Vector3, color: string): void {
-  const particleSystem = new ParticleSystem(scene);
+  emitter.position.copy(position);
+  scene.add(emitter);
   
-  particleSystem.createEmitter(position, {
-    count: 30,
-    color: color,
-    size: 0.03,
-    speed: 2,
-    spread: 0.8,
-    lifetime: 0.7,
-    gravity: 5
+  // Emit all particles at once
+  emitter.update(0.5);
+  
+  // Create a flash effect
+  const flashGeometry = new SphereGeometry(0.2, 16, 16);
+  const flashMaterial = new MeshBasicMaterial({
+    color: new Color(color),
+    transparent: true,
+    opacity: 1.0,
+    blending: AdditiveBlending
   });
-}
-
-export function attachToObject(obj: Object3D, effect: ParticleEmitter): void {
-  obj.add(effect);
+  
+  const flash = new Mesh(flashGeometry, flashMaterial);
+  flash.position.copy(position);
+  scene.add(flash);
+  
+  // Animate the flash and remove when done
+  let flashLifetime = 0;
+  const maxFlashLifetime = 0.3;
+  
+  function updateFlash() {
+    flashLifetime += 0.016; // Approximate for 60fps
+    
+    if (flashLifetime >= maxFlashLifetime) {
+      scene.remove(flash);
+      flashMaterial.dispose();
+      flashGeometry.dispose();
+      
+      // Also remove emitter after a delay
+      setTimeout(() => {
+        scene.remove(emitter);
+      }, 500);
+      
+      return;
+    }
+    
+    // Fade out and expand
+    const lifeRatio = flashLifetime / maxFlashLifetime;
+    flash.scale.set(1 + lifeRatio, 1 + lifeRatio, 1 + lifeRatio);
+    flashMaterial.opacity = 1 - lifeRatio;
+    
+    requestAnimationFrame(updateFlash);
+  }
+  
+  updateFlash();
 }

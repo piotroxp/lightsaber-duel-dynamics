@@ -1,352 +1,498 @@
-import {
-  Group,
-  Vector3,
-  Object3D,
-  Scene,
-  AnimationMixer,
-  Clock,
-  Quaternion,
-  Raycaster,
-  BoxGeometry,
-  MeshPhongMaterial,
-  Mesh,
-  MeshBasicMaterial,
-  CylinderGeometry,
-  PointLight,
-  AdditiveBlending,
-} from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { Group, Scene, Vector3, Mesh, BoxGeometry, MeshStandardMaterial, SphereGeometry, CylinderGeometry, Color, Quaternion, Euler, MathUtils } from 'three';
 import { Lightsaber } from './lightsaber';
+import { createSaberClashEffect } from './effects';
 import gameAudio from './audio';
-import { createHitEffect } from './effects';
 
-export interface EnemyState {
-  health: number;
-  maxHealth: number;
-  attacking: boolean;
-  blocking: boolean;
-  staggered: boolean;
-  lastAttackTime: number;
-  lastDecision: number;
-  nextAttackDelay: number;
-  targetPosition: Vector3;
-  isDead: boolean;
+export interface EnemyOptions {
+  health?: number;
+  speed?: number;
+  attackRange?: number;
+  attackDamage?: number;
+  lightsaberColor?: string;
+}
+
+export enum EnemyState {
+  IDLE = 'idle',
+  PURSUING = 'pursuing',
+  ATTACKING = 'attacking',
+  BLOCKING = 'blocking',
+  STAGGERED = 'staggered',
+  DEAD = 'dead'
 }
 
 export class Enemy extends Group {
-  private scene: Scene;
-  private model: Group | null = null;
-  private lightsaber: Lightsaber;
-  private mixer: AnimationMixer | null = null;
-  private animations: Map<string, { clip: any; action: any }> = new Map();
-  private clock: Clock = new Clock();
-  private raycaster: Raycaster = new Raycaster();
-  private collider: Object3D;
-  private boundingBox: Mesh;
-  private state: EnemyState = {
-    health: 100,
-    maxHealth: 100,
-    attacking: false,
-    blocking: false,
-    staggered: false,
-    lastAttackTime: 0,
-    lastDecision: 0,
-    nextAttackDelay: 0,
-    targetPosition: new Vector3(),
-    isDead: false,
-  };
-  
-  // Movement
-  private moveSpeed: number = 2.0;
-  private minAttackDistance: number = 2.5;
-  private maxAttackDistance: number = 4.0;
-  private optimalDistance: number = 3.0;
-  private rotationSpeed: number = 5.0;
+  // Stats
+  private health: number;
+  private maxHealth: number;
+  private speed: number;
+  private attackRange: number;
+  private attackDamage: number;
   
   // Combat
-  private attackCooldown: number = 1.0; // seconds
-  private attackDamage: number = 15;
-  private attackRange: number = 2.0;
-  private attackProbability: number = 0.7;
-  private blockProbability: number = 0.5;
-  private decisionInterval: number = 0.5; // seconds
+  private lightsaber: Lightsaber;
+  private attackCooldown: number = 0;
+  private blockCooldown: number = 0;
+  private staggerTime: number = 0;
+  private attacking: boolean = false;
+  private blocking: boolean = false;
+  private lastHitTime: number = 0;
+  private state: EnemyState = EnemyState.IDLE;
   
-  constructor(scene: Scene) {
+  // AI
+  private targetPosition: Vector3 = new Vector3();
+  private targetDirection: Vector3 = new Vector3(0, 0, -1);
+  private aggroRange: number = 10;
+  private tooCloseRange: number = 1.5;
+  private wanderTimer: number = 0;
+  private wanderTarget: Vector3 = new Vector3();
+  
+  // Visuals
+  private head: Mesh;
+  private body: Mesh;
+  private leftArm: Mesh;
+  private rightArm: Mesh;
+  private leftLeg: Mesh;
+  private rightLeg: Mesh;
+  
+  constructor(scene: Scene, options: EnemyOptions = {}) {
     super();
-    this.scene = scene;
+    
+    // Set stats with defaults
+    this.maxHealth = options.health || 100;
+    this.health = this.maxHealth;
+    this.speed = options.speed || 2.0;
+    this.attackRange = options.attackRange || 2.0;
+    this.attackDamage = options.attackDamage || 10;
     
     // Create lightsaber
     this.lightsaber = new Lightsaber({
-      bladeColor: '#ff3333', // Red
-      length: 1.1,
+      color: options.lightsaberColor || '#ff0000',
+      bladeLength: 1.0
     });
-    this.lightsaber.position.set(0.4, 1.0, 0.2);
-    this.lightsaber.rotateY(Math.PI / 2);
+    this.lightsaber.position.set(0.4, 0.9, 0.2);
+    this.lightsaber.rotateY(Math.PI * 0.25);
     this.add(this.lightsaber);
-    this.lightsaber.activateBlade();
     
-    // Create temporary enemy body until model is loaded
-    this.createTemporaryBody();
-    
-    // Create collider
-    const colliderGeometry = new BoxGeometry(0.7, 2, 0.7);
-    const colliderMaterial = new MeshBasicMaterial({ visible: false });
-    this.collider = new Mesh(colliderGeometry, colliderMaterial);
-    this.collider.position.y = 1;
-    this.add(this.collider);
-    
-    // Create debug bounding box (invisible in final version)
-    const boundingGeometry = new BoxGeometry(0.7, 2, 0.7);
-    const boundingMaterial = new MeshPhongMaterial({
-      color: 0xff0000,
-      transparent: true,
-      opacity: 0.0, // Set to 0.2 to visualize collider
-      blending: AdditiveBlending
-    });
-    this.boundingBox = new Mesh(boundingGeometry, boundingMaterial);
-    this.boundingBox.position.y = 1;
-    this.add(this.boundingBox);
-  }
-  
-  private createTemporaryBody(): void {
-    // Create a basic temporary body
-    const bodyGeometry = new CylinderGeometry(0.3, 0.3, 1.8, 12);
-    const bodyMaterial = new MeshPhongMaterial({
+    // Create body parts
+    // Head
+    const headGeometry = new SphereGeometry(0.2, 16, 16);
+    const headMaterial = new MeshStandardMaterial({
       color: 0x333333,
-      specular: 0x111111,
-      shininess: 30
+      roughness: 0.7
     });
-    const body = new Mesh(bodyGeometry, bodyMaterial);
-    body.position.y = 0.9;
-    this.add(body);
+    this.head = new Mesh(headGeometry, headMaterial);
+    this.head.position.y = 1.5;
+    this.head.castShadow = true;
+    this.add(this.head);
     
-    // Create a head
-    const headGeometry = new CylinderGeometry(0.2, 0.2, 0.3, 12);
-    const headMaterial = new MeshPhongMaterial({
-      color: 0x222222,
-      specular: 0x111111,
-      shininess: 30
+    // Body
+    const bodyGeometry = new BoxGeometry(0.5, 0.7, 0.3);
+    const bodyMaterial = new MeshStandardMaterial({
+      color: 0x660000,
+      roughness: 0.5
     });
-    const head = new Mesh(headGeometry, headMaterial);
-    head.position.y = 1.95;
-    this.add(head);
+    this.body = new Mesh(bodyGeometry, bodyMaterial);
+    this.body.position.y = 1.0;
+    this.body.castShadow = true;
+    this.add(this.body);
     
-    // Add some eyes
-    const eyeGeometry = new CylinderGeometry(0.05, 0.05, 0.05, 8);
-    const eyeMaterial = new MeshPhongMaterial({
-      color: 0xff3333,
-      emissive: 0xff0000,
-      emissiveIntensity: 1
+    // Arms
+    const armGeometry = new CylinderGeometry(0.08, 0.08, 0.5, 8);
+    const armMaterial = new MeshStandardMaterial({
+      color: 0x333333,
+      roughness: 0.7
     });
     
-    const leftEye = new Mesh(eyeGeometry, eyeMaterial);
-    leftEye.position.set(0.1, 2.0, 0.15);
-    leftEye.rotateX(Math.PI / 2);
-    this.add(leftEye);
+    this.leftArm = new Mesh(armGeometry, armMaterial);
+    this.leftArm.position.set(-0.3, 1.1, 0);
+    this.leftArm.rotation.z = -Math.PI / 4;
+    this.leftArm.castShadow = true;
+    this.add(this.leftArm);
     
-    const rightEye = new Mesh(eyeGeometry, eyeMaterial);
-    rightEye.position.set(-0.1, 2.0, 0.15);
-    rightEye.rotateX(Math.PI / 2);
-    this.add(rightEye);
+    this.rightArm = new Mesh(armGeometry, armMaterial);
+    this.rightArm.position.set(0.3, 1.1, 0);
+    this.rightArm.rotation.z = Math.PI / 4;
+    this.rightArm.castShadow = true;
+    this.add(this.rightArm);
     
-    // Add a glow
-    const glow = new PointLight(0xff3333, 0.5, 2);
-    glow.position.set(0, 1.8, 0);
-    this.add(glow);
+    // Legs
+    const legGeometry = new CylinderGeometry(0.1, 0.1, 0.6, 8);
+    const legMaterial = new MeshStandardMaterial({
+      color: 0x000000,
+      roughness: 0.7
+    });
+    
+    this.leftLeg = new Mesh(legGeometry, legMaterial);
+    this.leftLeg.position.set(-0.15, 0.5, 0);
+    this.leftLeg.castShadow = true;
+    this.add(this.leftLeg);
+    
+    this.rightLeg = new Mesh(legGeometry, legMaterial);
+    this.rightLeg.position.set(0.15, 0.5, 0);
+    this.rightLeg.castShadow = true;
+    this.add(this.rightLeg);
+    
+    // Activate lightsaber
+    this.lightsaber.activate();
   }
   
   update(deltaTime: number, playerPosition: Vector3, playerDirection: Vector3): void {
-    if (this.state.isDead) {
-      // Handle death animation or removal
+    // Update lightsaber
+    this.lightsaber.update(deltaTime);
+    
+    // Update cooldowns
+    if (this.attackCooldown > 0) {
+      this.attackCooldown -= deltaTime;
+    }
+    
+    if (this.blockCooldown > 0) {
+      this.blockCooldown -= deltaTime;
+    }
+    
+    if (this.staggerTime > 0) {
+      this.staggerTime -= deltaTime;
+      if (this.staggerTime <= 0) {
+        this.state = EnemyState.PURSUING;
+      }
+    }
+    
+    // If dead, don't do anything else
+    if (this.state === EnemyState.DEAD) {
       return;
     }
     
-    const time = performance.now();
+    // Save the target player position for pathfinding
+    this.targetPosition.copy(playerPosition);
+    this.targetDirection.copy(playerDirection);
     
-    // Update mixer if available
-    if (this.mixer) {
-      this.mixer.update(deltaTime);
-    }
-    
-    // Calculate distance to player
+    // Update state based on distance to player
     const distanceToPlayer = this.position.distanceTo(playerPosition);
     
-    // Make decisions about behavior
-    if (time - this.state.lastDecision > this.decisionInterval * 1000) {
-      this.state.lastDecision = time;
+    if (this.staggerTime > 0) {
+      this.state = EnemyState.STAGGERED;
+    } else if (distanceToPlayer <= this.attackRange) {
+      // Within attack range
+      const shouldBlock = Math.random() < 0.3 && this.blockCooldown <= 0;
       
-      if (!this.state.staggered) {
-        // Reset blocking
-        this.state.blocking = false;
-        
-        // Decide whether to attack
-        if (distanceToPlayer <= this.maxAttackDistance && 
-            time - this.state.lastAttackTime > this.attackCooldown * 1000 &&
-            Math.random() < this.attackProbability) {
-          this.attack();
-        } 
-        // Decide whether to block
-        else if (distanceToPlayer <= this.maxAttackDistance && 
-                Math.random() < this.blockProbability) {
-          this.state.blocking = true;
-        }
-      }
-    }
-    
-    // Movement logic
-    if (!this.state.attacking && !this.state.staggered) {
-      let moveTarget = new Vector3();
-      
-      if (distanceToPlayer > this.maxAttackDistance) {
-        // Move closer to player
-        moveTarget.copy(playerPosition)
-          .sub(this.position)
-          .normalize()
-          .multiplyScalar(this.moveSpeed * deltaTime);
-      } else if (distanceToPlayer < this.minAttackDistance) {
-        // Back away slightly
-        moveTarget.copy(this.position)
-          .sub(playerPosition)
-          .normalize()
-          .multiplyScalar(this.moveSpeed * 0.5 * deltaTime);
+      if (shouldBlock) {
+        this.state = EnemyState.BLOCKING;
+        this.blocking = true;
+        this.blockCooldown = 1.0; // Cooldown before blocking again
+      } else if (this.attackCooldown <= 0) {
+        this.state = EnemyState.ATTACKING;
+        this.attack();
       } else {
-        // Circle around the player
-        const circleDirection = new Vector3(-playerDirection.z, 0, playerDirection.x);
-        moveTarget.copy(circleDirection)
-          .normalize()
-          .multiplyScalar(this.moveSpeed * 0.7 * deltaTime);
+        this.state = EnemyState.PURSUING;
       }
-      
-      // Apply movement
-      this.position.add(moveTarget);
+    } else if (distanceToPlayer <= this.aggroRange) {
+      // Within aggro range, pursue player
+      this.state = EnemyState.PURSUING;
+      this.blocking = false;
+    } else {
+      // Out of range, go idle
+      this.state = EnemyState.IDLE;
+      this.blocking = false;
     }
     
-    // Always face the player
-    const targetRotation = new Quaternion();
-    const directionToPlayer = new Vector3()
-      .subVectors(playerPosition, this.position)
+    // Update movement based on state
+    switch (this.state) {
+      case EnemyState.PURSUING:
+        this.moveTowardsTarget(deltaTime);
+        break;
+        
+      case EnemyState.IDLE:
+        this.wander(deltaTime);
+        break;
+        
+      case EnemyState.ATTACKING:
+        // Don't move during attack
+        this.rotateTowardTarget(deltaTime);
+        break;
+        
+      case EnemyState.BLOCKING:
+        // Move slightly when blocking to avoid easy hits
+        this.strafeAroundTarget(deltaTime);
+        break;
+        
+      case EnemyState.STAGGERED:
+        // Don't move while staggered
+        break;
+        
+      default:
+        break;
+    }
+    
+    // Update animation
+    this.animate(deltaTime);
+  }
+  
+  private moveTowardsTarget(deltaTime: number): void {
+    // Calculate direction vector
+    const direction = new Vector3()
+      .subVectors(this.targetPosition, this.position)
       .normalize();
-    directionToPlayer.y = 0; // Keep upright
     
-    const forward = new Vector3(0, 0, 1);
-    targetRotation.setFromUnitVectors(forward, directionToPlayer);
+    // Only move in the xz plane
+    direction.y = 0;
     
-    // Smoothly rotate towards player
-    this.quaternion.slerp(targetRotation, this.rotationSpeed * deltaTime);
-    
-    // Update lightsaber trail
-    const isMoving = this.state.attacking || distanceToPlayer > this.optimalDistance;
-    this.lightsaber.updateTrail(this.position, isMoving);
-    
-    // Check if attack has completed
-    if (this.state.attacking && time - this.state.lastAttackTime > 0.7 * 1000) {
-      this.state.attacking = false;
+    // Check if we're too close to the player
+    const distanceToPlayer = this.position.distanceTo(this.targetPosition);
+    if (distanceToPlayer < this.tooCloseRange) {
+      // Move away slightly
+      direction.negate();
     }
     
-    // Check if staggered state should end
-    if (this.state.staggered && time - this.state.lastAttackTime > 1000) {
-      this.state.staggered = false;
+    // Move the enemy
+    const moveAmount = this.speed * deltaTime;
+    this.position.add(direction.multiplyScalar(moveAmount));
+    
+    // Rotate to face the target
+    this.rotateTowardTarget(deltaTime);
+  }
+  
+  private rotateTowardTarget(deltaTime: number): void {
+    // Get direction to player
+    const direction = new Vector3()
+      .subVectors(this.targetPosition, this.position)
+      .normalize();
+    
+    // Only rotate in the xz plane
+    direction.y = 0;
+    
+    // Calculate target rotation
+    const targetQuaternion = new Quaternion();
+    const euler = new Euler(0, Math.atan2(direction.x, direction.z), 0);
+    targetQuaternion.setFromEuler(euler);
+    
+    // Smoothly rotate towards the target
+    this.quaternion.slerp(targetQuaternion, 5 * deltaTime);
+  }
+  
+  private strafeAroundTarget(deltaTime: number): void {
+    // Calculate position relative to the player
+    const toPlayer = new Vector3().subVectors(this.targetPosition, this.position);
+    
+    // Create a perpendicular direction in the xz plane (for strafing)
+    const strafeDir = new Vector3(-toPlayer.z, 0, toPlayer.x).normalize();
+    
+    // Alternate strafing direction based on time
+    const time = performance.now() * 0.001;
+    if (Math.sin(time) > 0) {
+      strafeDir.negate();
     }
+    
+    // Move the enemy
+    const moveAmount = this.speed * 0.7 * deltaTime; // Move slower while strafing
+    this.position.add(strafeDir.multiplyScalar(moveAmount));
+    
+    // Keep facing the player
+    this.rotateTowardTarget(deltaTime);
+  }
+  
+  private wander(deltaTime: number): void {
+    // Update wander timer
+    this.wanderTimer -= deltaTime;
+    
+    // Pick a new random destination if needed
+    if (this.wanderTimer <= 0) {
+      this.wanderTimer = 2 + Math.random() * 3; // 2-5 seconds
+      
+      // Random point within 5 units of current position
+      const randomOffset = new Vector3(
+        (Math.random() - 0.5) * 10,
+        0,
+        (Math.random() - 0.5) * 10
+      );
+      
+      this.wanderTarget.copy(this.position).add(randomOffset);
+    }
+    
+    // Move towards the wander target
+    const direction = new Vector3()
+      .subVectors(this.wanderTarget, this.position)
+      .normalize();
+    
+    // Only move in the xz plane
+    direction.y = 0;
+    
+    // Move the enemy at half speed
+    const moveAmount = this.speed * 0.5 * deltaTime;
+    this.position.add(direction.multiplyScalar(moveAmount));
+    
+    // Rotate towards the wander target
+    const targetQuaternion = new Quaternion();
+    const euler = new Euler(0, Math.atan2(direction.x, direction.z), 0);
+    targetQuaternion.setFromEuler(euler);
+    
+    // Smoothly rotate towards the target
+    this.quaternion.slerp(targetQuaternion, 3 * deltaTime);
   }
   
   attack(): void {
-    if (this.state.attacking || this.state.staggered) return;
-    
-    const time = performance.now();
-    this.state.attacking = true;
-    this.state.lastAttackTime = time;
-    
-    // Generate swing sound
-    this.lightsaber.swing(1.0);
-    
-    // Trigger attack animation if available
-    // if (this.animations.has('attack')) {
-    //   const attackAnim = this.animations.get('attack');
-    //   attackAnim.action.reset().play();
-    // }
+    if (this.attackCooldown <= 0 && this.state !== EnemyState.DEAD) {
+      this.attacking = true;
+      this.attackCooldown = 1.5; // Cooldown before next attack
+      
+      // Simple attack animation tracked through time
+      const attackDuration = 0.5; // seconds
+      
+      // Play attack sound
+      gameAudio.playSound('lightsaberHum', { volume: 0.4 });
+      
+      // Schedule the end of attack
+      setTimeout(() => {
+        this.attacking = false;
+      }, attackDuration * 1000);
+    }
   }
   
-  takeDamage(amount: number, sourcePosition?: Vector3): number {
-    // Reduced damage when blocking
-    const actualDamage = this.state.blocking ? amount * 0.3 : amount;
+  takeDamage(amount: number, hitPosition: Vector3): number {
+    // If the enemy is dead, no more damage
+    if (this.state === EnemyState.DEAD) {
+      return 0;
+    }
     
-    this.state.health -= actualDamage;
-    
-    if (this.state.health <= 0) {
-      this.state.health = 0;
-      this.state.isDead = true;
-      this.die();
-    } else {
-      // Apply stagger effect if not blocking and damage is significant
-      if (!this.state.blocking && actualDamage > 5) {
-        this.state.staggered = true;
-        this.state.lastAttackTime = performance.now(); // Reset timer for stagger recovery
-      }
+    // If blocking and hit is from the front, reduce damage
+    if (this.blocking) {
+      // Calculate direction from enemy to hit
+      const toHit = new Vector3().subVectors(hitPosition, this.position).normalize();
+      toHit.y = 0; // Only consider xz plane for blocking
       
-      // Visual/audio feedback
-      if (this.state.blocking) {
-        this.lightsaber.clash();
+      // Get enemy forward direction
+      const forward = new Vector3(0, 0, 1).applyQuaternion(this.quaternion);
+      
+      // If hit from the front (dot product > 0), block reduces damage by 75%
+      const dot = forward.dot(toHit);
+      if (dot > 0.3) { // Blocking angle (about 60 degrees from front)
+        amount *= 0.25; // Reduce damage by 75%
         
-        // Create effect if source position is provided
-        if (sourcePosition) {
-          createHitEffect(this.scene, sourcePosition, '#ffaa00');
-        }
-      } else {
-        gameAudio.playSound('enemyHit', { volume: 0.6 });
-        
-        // Create hit effect
-        if (sourcePosition) {
-          createHitEffect(
-            this.scene,
-            new Vector3().copy(this.position).add(new Vector3(0, 1, 0)),
-            '#ff3333'
-          );
-        }
+        // Create a clash effect at the lightsaber position
+        const clashPosition = this.lightsaber.getSaberTipPosition();
+        createSaberClashEffect(this.parent as Scene, clashPosition, '#ff8800');
       }
     }
     
-    return actualDamage;
+    // Apply damage
+    this.health -= amount;
+    this.lastHitTime = performance.now();
+    
+    // Enter staggered state if hit
+    if (amount > 0 && this.state !== EnemyState.DEAD) {
+      this.staggerTime = 0.3; // Staggered for 0.3 seconds
+      this.state = EnemyState.STAGGERED;
+    }
+    
+    // Check for death
+    if (this.health <= 0 && this.state !== EnemyState.DEAD) {
+      this.health = 0;
+      this.die();
+    }
+    
+    return amount; // Return actual damage dealt
   }
   
-  die(): void {
-    // Play death sound
-    gameAudio.playSound('enemyDeath', { volume: 0.8 });
+  private die(): void {
+    this.state = EnemyState.DEAD;
+    this.blocking = false;
+    this.attacking = false;
     
     // Deactivate lightsaber
-    this.lightsaber.deactivateBlade();
+    this.lightsaber.deactivate();
     
-    // Play death animation if available
-    // if (this.animations.has('death')) {
-    //   const deathAnim = this.animations.get('death');
-    //   deathAnim.action.reset().play();
-    // }
+    // Fall to the ground (simple animation)
+    this.rotateX(Math.PI / 2);
+    this.position.y = 0.5;
     
-    // Create death effect
-    createHitEffect(
-      this.scene,
-      new Vector3().copy(this.position).add(new Vector3(0, 1, 0)),
-      '#ff3333'
-    );
+    // Play death sound
+    gameAudio.playSound('enemyHit', { volume: 1.0 });
   }
   
-  getHealth(): number {
-    return this.state.health;
+  private animate(deltaTime: number): void {
+    // Simple animations based on state
+    const time = performance.now() * 0.001;
+    
+    switch (this.state) {
+      case EnemyState.PURSUING:
+        // Slight bobbing while moving
+        this.position.y = Math.sin(time * 5) * 0.05 + 0.05;
+        
+        // Arm and leg movement
+        this.leftArm.rotation.x = Math.sin(time * 5) * 0.2;
+        this.rightArm.rotation.x = -Math.sin(time * 5) * 0.2;
+        this.leftLeg.position.z = Math.sin(time * 5) * 0.1;
+        this.rightLeg.position.z = -Math.sin(time * 5) * 0.1;
+        break;
+        
+      case EnemyState.ATTACKING:
+        // Attacking animation - swing the saber
+        if (this.attacking) {
+          // Calculate attack progress (0 to 1)
+          const progress = 1 - (this.attackCooldown - 1.0) / 0.5;
+          
+          // Swing the right arm with the lightsaber
+          if (progress <= 0.5) {
+            // Wind up (0 to 0.5)
+            const windupProgress = progress / 0.5;
+            this.rightArm.rotation.x = MathUtils.lerp(0, -Math.PI / 2, windupProgress);
+          } else {
+            // Swing (0.5 to 1)
+            const swingProgress = (progress - 0.5) / 0.5;
+            this.rightArm.rotation.x = MathUtils.lerp(-Math.PI / 2, Math.PI / 3, swingProgress);
+          }
+          
+          // Twist body into the attack
+          this.body.rotation.y = Math.sin(progress * Math.PI) * 0.3;
+        }
+        break;
+        
+      case EnemyState.BLOCKING:
+        // Hold lightsaber up in blocking stance
+        this.rightArm.rotation.x = -Math.PI / 4;
+        this.rightArm.rotation.y = -Math.PI / 6;
+        break;
+        
+      case EnemyState.STAGGERED:
+        // Recoil from hit
+        const recoilAmount = Math.sin(time * 20) * 0.1 * (this.staggerTime / 0.3);
+        this.position.y = recoilAmount + 0.05;
+        this.body.rotation.z = recoilAmount;
+        break;
+        
+      case EnemyState.IDLE:
+        // Subtle idle movements
+        this.body.rotation.y = Math.sin(time * 0.5) * 0.1;
+        this.head.rotation.y = Math.sin(time * 0.3) * 0.2;
+        break;
+        
+      case EnemyState.DEAD:
+        // No animation when dead
+        break;
+    }
   }
   
-  getMaxHealth(): number {
-    return this.state.maxHealth;
+  getSaberTipPosition(): Vector3 {
+    const tipPosition = this.lightsaber.getSaberTipPosition();
+    return tipPosition;
   }
   
   isAttacking(): boolean {
-    return this.state.attacking;
+    return this.attacking;
   }
   
   isBlocking(): boolean {
-    return this.state.blocking;
+    return this.blocking;
   }
   
   isAlive(): boolean {
-    return !this.state.isDead;
+    return this.state !== EnemyState.DEAD;
+  }
+  
+  getHealth(): number {
+    return this.health;
+  }
+  
+  getMaxHealth(): number {
+    return this.maxHealth;
   }
   
   getAttackDamage(): number {
@@ -357,14 +503,13 @@ export class Enemy extends Group {
     return this.attackRange;
   }
   
-  getSaberPosition(): Vector3 {
-    // Get world position of lightsaber
-    const position = new Vector3();
-    this.lightsaber.getWorldPosition(position);
-    return position;
+  getDirection(): Vector3 {
+    const forward = new Vector3(0, 0, 1);
+    forward.applyQuaternion(this.quaternion);
+    return forward;
   }
   
-  getSaberTipPosition(): Vector3 {
-    return this.lightsaber.getBladeEndPosition();
+  getPosition(): Vector3 {
+    return this.position.clone();
   }
 }

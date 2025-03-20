@@ -1,3 +1,4 @@
+
 import {
   Scene,
   WebGLRenderer,
@@ -309,7 +310,9 @@ export class GameScene {
     
     // Stop audio
     this.stopBackgroundMusic();
-    gameAudio.stopAll();
+    if (gameAudio.stopAll) {
+      gameAudio.stopAll();
+    }
     
     // Remove event listeners
     window.removeEventListener('resize', this.onWindowResize.bind(this));

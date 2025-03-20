@@ -1,3 +1,4 @@
+
 import { Vector3, Scene } from 'three';
 import { Player } from './player';
 import { Enemy } from './enemy';
@@ -76,7 +77,8 @@ export class CombatSystem {
       for (const enemy of this.enemies) {
         if (!enemy.isAlive()) continue;
         
-        const enemyPosition = new Vector3(enemy.position.x, enemy.position.y + 1.0, enemy.position.z);
+        const enemyPosition = enemy.getPosition().clone();
+        enemyPosition.y += 1.0; // Aim at the enemy's torso
         
         // Calculate vector from player to enemy
         const toEnemy = new Vector3().subVectors(enemyPosition, playerPosition);
@@ -110,7 +112,7 @@ export class CombatSystem {
       if (!enemy.isAlive() || !enemy.isAttacking()) continue;
       
       const playerPosition = this.player.getPosition();
-      const enemyPosition = enemy.position.clone();
+      const enemyPosition = enemy.getPosition();
       
       // Check distance
       const attackRange = enemy.getAttackRange();
