@@ -1,4 +1,3 @@
-
 import { Audio, AudioListener, AudioLoader, PositionalAudio } from 'three';
 
 interface SoundOptions {
