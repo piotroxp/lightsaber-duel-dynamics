@@ -1,4 +1,3 @@
-
 import { Group, Vector3, Mesh, CylinderGeometry, MeshStandardMaterial, SphereGeometry, Object3D, Color } from 'three';
 import { ParticleEmitter } from './effects';
 
@@ -204,8 +203,8 @@ export class Lightsaber extends Group {
   }
   
   getBladeTopPosition(): Vector3 {
-    const topPosition = new Vector3(0, this.handleLength / 2 + this.bladeCurrentLength, 0);
-    return this.localToWorld(topPosition.clone());
+    const tipPosition = new Vector3(0, this.handleLength / 2 + this.bladeCurrentLength, 0);
+    return this.localToWorld(tipPosition.clone());
   }
   
   getBladeBasePosition(): Vector3 {

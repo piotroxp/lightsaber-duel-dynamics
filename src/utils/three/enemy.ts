@@ -1,4 +1,3 @@
-
 import { Group, Scene, Vector3, Mesh, BoxGeometry, MeshStandardMaterial, SphereGeometry, CylinderGeometry, Color, Quaternion, Euler, MathUtils } from 'three';
 import { Lightsaber } from './lightsaber';
 import { createSaberClashEffect } from './effects';
@@ -379,7 +378,7 @@ export class Enemy extends Group {
     this.lastHitTime = performance.now();
     
     // Enter staggered state if hit
-    if (amount > 0 && this.state !== EnemyState.DEAD) {
+    if (amount > 0 && this.state !== EnemyState.DEAD && this.health > 0) {
       this.staggerTime = 0.3; // Staggered for 0.3 seconds
       this.state = EnemyState.STAGGERED;
     }

@@ -218,15 +218,16 @@ export class GameScene {
   private createEnemies(): void {
     // Create an enemy
     const enemy = new Enemy(this.scene);
-    this.scene.add(enemy);
-    this.enemies.push(enemy);
     
-    // Position the enemy
+    // Position the enemy (this should work since Enemy extends Group)
     enemy.position.set(
       (Math.random() - 0.5) * 8,
       0,
       (Math.random() - 0.5) * 8
     );
+    
+    this.scene.add(enemy);
+    this.enemies.push(enemy);
     
     // Add enemy to combat system
     this.combatSystem.addEnemy(enemy);

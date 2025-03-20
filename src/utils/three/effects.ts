@@ -1,4 +1,3 @@
-
 import { Group, Scene, Vector3, Points, BufferGeometry, PointsMaterial, BufferAttribute, Color, Object3D, Mesh, SphereGeometry, MeshBasicMaterial, AdditiveBlending } from 'three';
 
 export interface ParticleOptions {
@@ -20,7 +19,7 @@ interface Particle {
   active: boolean;
 }
 
-export class ParticleEmitter extends Group {
+export class ParticleEmitter extends Object3D {
   private particles: Particle[] = [];
   private geometry: BufferGeometry;
   private material: PointsMaterial;
