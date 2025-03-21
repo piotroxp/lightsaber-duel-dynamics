@@ -118,37 +118,40 @@ export class Enemy extends Group {
       return;
     }
     
-    // Save the target player position for pathfinding
-    this.targetPosition.copy(playerPosition);
-    this.targetDirection.copy(playerDirection);
-    
-    // Update state based on distance to player
-    const distanceToPlayer = this.position.distanceTo(playerPosition);
-    
-    if (this.staggerTime > 0) {
-      this.state = EnemyState.STAGGERED;
-    } else if (distanceToPlayer <= this.attackRange) {
-      // Within attack range
-      const shouldBlock = Math.random() < 0.3 && this.blockCooldown <= 0;
+    // Add null checks to prevent errors with undefined vectors
+    if (playerPosition && playerDirection) {
+      // Save the target player position for pathfinding
+      this.targetPosition.copy(playerPosition);
+      this.targetDirection.copy(playerDirection);
       
-      if (shouldBlock) {
-        this.state = EnemyState.BLOCKING;
-        this.blocking = true;
-        this.blockCooldown = 1.0; // Cooldown before blocking again
-      } else if (this.attackCooldown <= 0) {
-        this.state = EnemyState.ATTACKING;
-        this.attack();
-      } else {
+      // Update state based on distance to player
+      const distanceToPlayer = this.position.distanceTo(playerPosition);
+      
+      if (this.staggerTime > 0) {
+        this.state = EnemyState.STAGGERED;
+      } else if (distanceToPlayer <= this.attackRange) {
+        // Within attack range
+        const shouldBlock = Math.random() < 0.3 && this.blockCooldown <= 0;
+        
+        if (shouldBlock) {
+          this.state = EnemyState.BLOCKING;
+          this.blocking = true;
+          this.blockCooldown = 1.0; // Cooldown before blocking again
+        } else if (this.attackCooldown <= 0) {
+          this.state = EnemyState.ATTACKING;
+          this.attack();
+        } else {
+          this.state = EnemyState.PURSUING;
+        }
+      } else if (distanceToPlayer <= this.aggroRange) {
+        // Within aggro range, pursue player
         this.state = EnemyState.PURSUING;
+        this.blocking = false;
+      } else {
+        // Out of range, go idle
+        this.state = EnemyState.IDLE;
+        this.blocking = false;
       }
-    } else if (distanceToPlayer <= this.aggroRange) {
-      // Within aggro range, pursue player
-      this.state = EnemyState.PURSUING;
-      this.blocking = false;
-    } else {
-      // Out of range, go idle
-      this.state = EnemyState.IDLE;
-      this.blocking = false;
     }
     
     // Update movement based on state

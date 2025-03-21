@@ -29,6 +29,7 @@ import { Enemy } from './enemy';
 import { CombatSystem } from './combat';
 import { ParticleSystem } from './effects';
 import gameAudio from './audio';
+import { loadTextureWithFallback } from './textureLoader';
 
 export class GameScene {
   private container: HTMLElement;
@@ -93,20 +94,76 @@ export class GameScene {
   }
   
   async initialize(): Promise<void> {
-    if (this.isInitialized) return;
-    
-    console.log("Starting initialization");
-    
-    try {
-      // Load assets
-      this.onLoadProgress(0.2);
+    return new Promise((resolve, reject) => {
+      // Set a timeout to prevent infinite loading
+      const timeout = setTimeout(() => {
+        console.warn('Scene initialization timed out - continuing anyway');
+        this.isInitialized = true;
+        if (this.onLoadComplete) this.onLoadComplete();
+        resolve();
+      }, 10000); // 10 second timeout
+      
+      console.log("Starting initialization");
+      
       try {
-        console.log("Loading assets...");
-        await this.loadAssets();
-        console.log("Assets loaded successfully");
+        // Load assets
+        this.onLoadProgress(0.2);
+        try {
+          console.log("Loading assets...");
+          this.loadAssets();
+          console.log("Assets loaded successfully");
+        } catch (error) {
+          console.error("Error loading assets:", error);
+        }
+        
+        // Setup lighting
+        this.onLoadProgress(0.6);
+        console.log("Setting up lighting...");
+        this.setupLighting();
+        
+        // Create environment
+        this.onLoadProgress(0.7);
+        console.log("Creating environment...");
+        this.createEnvironment();
+        
+        // Add debug elements
+        this.addDebugElements();
+        
+        // Create enemies
+        this.onLoadProgress(0.8);
+        console.log("Creating enemies...");
+        this.createEnemies();
+        
+        // Start animation loop
+        this.onLoadProgress(0.9);
+        console.log("Starting animation loop...");
+        this.animate();
+        
+        clearTimeout(timeout);
+        this.isInitialized = true;
+        if (this.onLoadComplete) this.onLoadComplete();
+        resolve();
       } catch (error) {
-        console.error("Error loading assets:", error);
+        clearTimeout(timeout);
+        console.error('Failed to initialize scene:', error);
+        // Still resolve to prevent game from getting stuck
+        this.isInitialized = true;
+        if (this.onLoadComplete) this.onLoadComplete();
+        resolve();
       }
+    });
+  }
+  
+  private async loadAssets(): Promise<boolean> {
+    try {
+      // Initialize audio with better progress tracking
+      await gameAudio.initialize((progress) => {
+        console.log("Audio loading progress:", progress);
+        this.onLoadProgress(progress * 0.8); // Audio is 80% of loading
+      });
+      
+      // Load textures
+      const groundTexture = await loadTextureWithFallback('/textures/ground.jpg');
       
       // Setup lighting
       this.onLoadProgress(0.6);
@@ -137,50 +194,6 @@ export class GameScene {
       this.onLoadProgress(1.0);
       console.log("Initialization complete");
       this.onLoadComplete();
-    } catch (error) {
-      console.error("Error during initialization:", error);
-      this.onLoadProgress(1.0);
-      this.onLoadComplete();
-    }
-  }
-  
-  private async loadAssets(): Promise<boolean> {
-    try {
-      // Initialize audio with better progress tracking
-      await gameAudio.initialize((progress) => {
-        console.log("Audio loading progress:", progress);
-        this.onLoadProgress(progress * 0.8); // Audio is 80% of loading
-      });
-      
-      // Load textures
-      const textureLoader = new TextureLoader();
-      await new Promise<void>((resolve, reject) => {
-        textureLoader.load(
-          '/textures/floor.jpg', 
-          (texture) => {
-            console.log("Floor texture loaded");
-            texture.wrapS = RepeatWrapping;
-            texture.wrapT = RepeatWrapping;
-            texture.repeat.set(10, 10);
-            this.onLoadProgress(0.9); // Textures are 10% of loading
-            resolve();
-          },
-          // Progress callback
-          (xhr) => {
-            console.log(`Texture ${(xhr.loaded / xhr.total) * 100}% loaded`);
-          },
-          // Error callback
-          (error) => {
-            console.error("Error loading texture:", error);
-            // Continue even if texture fails
-            this.onLoadProgress(0.9);
-            resolve();
-          }
-        );
-      });
-      
-      this.onLoadProgress(1.0);
-      console.log("All assets loaded successfully");
       
       return true;
     } catch (error) {
