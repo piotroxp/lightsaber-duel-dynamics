@@ -232,6 +232,21 @@ const Game: React.FC = () => {
     }
   };
   
+  useEffect(() => {
+    if (gameSceneRef.current && gameSceneRef.current.isInitialized) {
+      console.log("Debugging game scene from Game component");
+      gameSceneRef.current.debug();
+      
+      // Force a re-render of the scene if it's not visible
+      setTimeout(() => {
+        if (gameSceneRef.current) {
+          console.log("Forcing animation restart after delay");
+          gameSceneRef.current.animate();
+        }
+      }, 1000);
+    }
+  }, [gameState.isStarted]);
+  
   return (
     <div className="relative w-full h-full">
       {gameState.hasError && (

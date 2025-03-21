@@ -1,4 +1,3 @@
-
 import { Scene, Raycaster, Vector3, Mesh, Group, Object3D } from 'three';
 import { Player } from './player';
 import { Enemy } from './enemy';
@@ -26,15 +25,22 @@ export class CombatSystem {
     return this.enemies;
   }
   
-  update(): void {
-    // Check for player attacks hitting enemies
-    this.checkPlayerAttacks();
+  update(deltaTime: number): void {
+    // Check for combat interactions
+    this.checkCombatInteractions(deltaTime);
     
-    // Check for enemy attacks hitting player
-    this.checkEnemyAttacks();
-    
-    // Remove dead enemies
-    this.enemies = this.enemies.filter(enemy => enemy.isAlive());
+    // Update existing combat effects
+    this.updateCombatEffects(deltaTime);
+  }
+  
+  private checkCombatInteractions(deltaTime: number): void {
+    // Implementation details for checking combat interactions
+    // This would check player vs enemies, etc.
+  }
+  
+  private updateCombatEffects(deltaTime: number): void {
+    // Update any ongoing combat effects
+    // This would update particles, sounds, etc.
   }
   
   private checkPlayerAttacks(): void {

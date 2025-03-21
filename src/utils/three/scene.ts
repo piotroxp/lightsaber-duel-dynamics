@@ -90,61 +90,45 @@ export class GameScene {
   }
   
   async initialize(): Promise<void> {
-    console.log("Starting game scene initialization");
+    console.log("Starting game initialization");
     
     if (this.isInitialized) {
-      console.log("Scene already initialized");
-      this.onLoadComplete();
+      console.log("Game already initialized");
       return;
     }
-    
+
     try {
-      // Report starting progress
-      this.onLoadProgress(0.1);
+      // Setup scene and lighting
+      this.setupScene();
+      console.log("Scene setup complete");
       
-      // Setup lighting
-      console.log("Setting up lighting...");
-      this.setupLighting();
-      this.onLoadProgress(0.4);
+      // Load game assets
+      await this.loadAssets();
+      console.log("Assets loaded");
       
-      // Create environment
-      console.log("Creating environment...");
-      this.createEnvironment();
-      this.onLoadProgress(0.6);
+      // Setup player
+      this.setupPlayer();
+      console.log("Player setup complete");
       
-      // Add debug elements
-      console.log("Adding debug elements...");
-      this.addDebugElements(true);
-      this.onLoadProgress(0.8);
-      
-      // Create enemies
-      console.log("Creating enemies...");
-      this.createEnemies();
-      this.onLoadProgress(0.9);
-      
-      // Start animation loop
-      console.log("Starting animation loop...");
-      this.animate();
+      // Add enemies once the player is ready
+      this.setupEnemies();
+      console.log("Enemies setup complete");
       
       // Mark as initialized
       this.isInitialized = true;
-      this.onLoadProgress(1.0);
+      console.log("Game initialization complete");
       
-      // Report completion after a short delay
-      setTimeout(() => {
-        console.log("Initialization complete!");
+      // Start animation loop - add more explicit call here
+      this.animate();
+      console.log("Animation loop started");
+      
+      // Trigger complete callback
+      if (this.onLoadComplete) {
         this.onLoadComplete();
-      }, 500);
+      }
     } catch (error) {
-      console.error("Error during initialization:", error);
-      
-      // Still mark as initialized to prevent getting stuck
-      this.isInitialized = true;
-      this.onLoadProgress(1.0);
-      
-      setTimeout(() => {
-        this.onLoadComplete();
-      }, 500);
+      console.error("Error initializing game:", error);
+      throw error;
     }
   }
   
@@ -312,54 +296,63 @@ export class GameScene {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
   
-  private animate(): void {
-    if (!this.isInitialized) return;
+  public animate(): void {
+    if (!this.isInitialized) {
+      console.warn("Tried to animate before initialization");
+      return;
+    }
     
+    console.log("Starting animation loop");
     this.isAnimating = true;
     
-    const update = () => {
-      if (!this.isAnimating) return;
-      
-      requestAnimationFrame(update);
-      
-      const deltaTime = this.clock.getDelta();
-      
-      // Update player
-      if (this.player) {
-        this.player.update(deltaTime);
+    const animate = () => {
+      if (!this.isAnimating) {
+        console.log("Animation stopped");
+        return;
       }
       
-      // Update enemies
-      for (const enemy of this.enemies) {
-        try {
-          enemy.update(
-            deltaTime,
-            this.player.position,
-            new Vector3(0, 0, 1) // Forward direction as fallback
-          );
-        } catch (error) {
-          console.error("Error updating enemy:", error);
-        }
-      }
-      
-      // Update combat system
       try {
-        this.combatSystem.update();
+        // Get delta time for smooth animations
+        const deltaTime = this.clock.getDelta();
+        
+        // Update player movement if player exists and has update method
+        if (this.player && typeof this.player.update === 'function') {
+          this.player.update(deltaTime);
+        }
+        
+        // Update enemies if they exist and have update method
+        for (const enemy of this.enemies) {
+          if (enemy && typeof enemy.update === 'function') {
+            try {
+              enemy.update(
+                deltaTime, 
+                this.player?.getPosition ? this.player.getPosition() : new Vector3(),
+                this.player?.getDirection ? this.player.getDirection() : new Vector3(0, 0, 1)
+              );
+            } catch (error) {
+              console.warn("Error updating enemy:", error);
+            }
+          }
+        }
+        
+        // Update combat system if it exists and has update method
+        if (this.combatSystem && typeof this.combatSystem.update === 'function') {
+          this.combatSystem.update(deltaTime);
+        }
+        
+        // Render the scene
+        this.renderer.render(this.scene, this.camera);
       } catch (error) {
-        console.error("Error updating combat system:", error);
+        console.error("Error in animation loop:", error);
+        // Don't stop the loop for errors
       }
       
-      // Render the scene
-      this.renderer.render(this.scene, this.camera);
-      
-      // Log occasional frame to verify rendering is happening
-      if (Math.random() < 0.01) {
-        console.log("Frame rendered, camera at:", this.camera.position);
-      }
+      // Continue animation loop
+      requestAnimationFrame(animate);
     };
     
-    update();
-    console.log("Animation loop started");
+    // Initial call to start the loop
+    animate();
   }
   
   unlockControls(): void {
@@ -531,5 +524,114 @@ export class GameScene {
       gridHelper.name = 'debug-helper-grid';
       this.scene.add(gridHelper);
     }
+  }
+  
+  public debug(): void {
+    console.log("Debug info:");
+    console.log("- isInitialized:", this.isInitialized);
+    console.log("- isAnimating:", this.isAnimating);
+    console.log("- container:", this.container);
+    console.log("- camera position:", this.camera?.position);
+    console.log("- scene children:", this.scene?.children.length);
+    console.log("- renderer:", this.renderer);
+    
+    // Check if renderer canvas is in DOM
+    if (this.renderer) {
+      const canvas = this.renderer.domElement;
+      console.log("- canvas in DOM:", document.body.contains(canvas));
+    }
+  }
+  
+  public stop(): void {
+    console.log("Stopping game scene");
+    this.isAnimating = false;
+  }
+  
+  private setupScene(): void {
+    console.log("Setting up game scene");
+
+    // Setup lighting
+    this.setupLighting();
+    console.log("Lighting setup complete");
+
+    // Create environment (floor and boundaries)
+    this.createEnvironment();
+    console.log("Environment created");
+
+    // Add debug elements if in debug mode
+    this.addDebugElements(true);
+  }
+  
+  private async loadAssets(): Promise<void> {
+    console.log("Loading game assets");
+    
+    // Simulate asset loading with progress
+    const loadSteps = 5;
+    for (let i = 1; i <= loadSteps; i++) {
+      // Update progress
+      this.onLoadProgress(i / loadSteps);
+      
+      // Small delay to simulate loading
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    // Load audio assets
+    try {
+      await gameAudio.initialize((progress) => {
+        // Adjust progress to be between 0.8 and 1.0
+        const adjustedProgress = 0.8 + progress * 0.2;
+        this.onLoadProgress(adjustedProgress);
+      });
+    } catch (error) {
+      console.error("Error loading audio:", error);
+    }
+    
+    return Promise.resolve();
+  }
+  
+  private setupPlayer(): void {
+    console.log("Setting up player");
+    
+    // Instead of calling initialize which doesn't exist, we'll do the setup directly
+    // Comment out the problematic line
+    // this.player.initialize();
+    
+    // Position player properly
+    this.player.position.set(0, 1, 0);
+    
+    // Activate the lightsaber if needed
+    try {
+      if (this.player.lightsaber && typeof this.player.lightsaber.activate === 'function') {
+        this.player.lightsaber.activate();
+      }
+    } catch (error) {
+      console.warn("Failed to activate player lightsaber:", error);
+    }
+    
+    // Additional player setup if needed
+    console.log("Player positioned at:", this.player.position);
+  }
+  
+  private setupEnemies(): void {
+    console.log("Setting up enemies");
+    
+    // Clear any existing enemies
+    this.enemies = [];
+    
+    // Create a single enemy for dueling
+    const enemy = new Enemy(this.scene, {
+      health: 100,
+      speed: 2.0,
+      attackRange: 2.5,
+      attackDamage: 10,
+      lightsaberColor: '#ff0000'
+    });
+    
+    // Position enemy opposite to player
+    enemy.position.set(0, 1, -5);
+    
+    // Add to scene and enemy list
+    this.scene.add(enemy);
+    this.enemies.push(enemy);
   }
 }
