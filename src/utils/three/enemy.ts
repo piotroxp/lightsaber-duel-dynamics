@@ -121,8 +121,21 @@ export class Enemy extends Group {
     // Always face the player
     this.lookAt(playerPosition.x, this.position.y, playerPosition.z);
     
-    // IMPROVED: Always pursue player when beyond attack range
-    if (distanceToPlayer > this.attackRange) {
+    // CRITICAL FIX: Make enemy more aggressive and ensure attacks happen
+    if (distanceToPlayer <= this.attackRange) {
+      // Get current time for cooldown
+      const currentTime = performance.now() / 1000;
+      
+      // FORCED ATTACK: Much more aggressive attack cycle
+      if (currentTime - this.lastAttackTime > 1.5) {
+        console.log("Enemy attempting attack!");
+        this.attack();
+        this.lastAttackTime = currentTime;
+      } else {
+        // Strafe around player between attacks
+        this.strafeAroundTarget(deltaTime, playerPosition);
+      }
+    } else if (distanceToPlayer <= this.aggroRange) {
       // Move directly toward player at full speed
       const moveSpeed = this.speed * deltaTime;
       const moveDirection = new Vector3()
@@ -133,55 +146,54 @@ export class Enemy extends Group {
       // Apply movement
       this.position.add(moveDirection.multiplyScalar(moveSpeed));
       this.state = EnemyState.PURSUING;
-    } 
-    // IMPROVED: Attack frequently when in range
-    else {
-      // Get current time for cooldown
-      const currentTime = performance.now() / 1000;
-      
-      // Attack more frequently (1 second cooldown)
-      if (currentTime - this.lastAttackTime > 1.0) {
-        this.attack();
-        this.lastAttackTime = currentTime;
-      } else {
-        // Strafe around player between attacks for dynamic movement
-        this.strafeAroundTarget(deltaTime, playerPosition);
-      }
     }
   }
   
   attack(): void {
-    if (this.state === EnemyState.ATTACKING || 
-        this.state === EnemyState.DEAD || 
-        this.state === EnemyState.STAGGERED) return;
+    console.log("Enemy attack triggered!");
     
-    const currentTime = performance.now() / 1000;
-    this.lastAttackTime = currentTime;
+    // Force attack regardless of state (except dead)
+    if (this.state === EnemyState.DEAD) return;
+    
+    // Set state and timer
     this.state = EnemyState.ATTACKING;
     this.attackTimer = 0;
     this.hasAppliedDamage = false;
+    this.lastAttackTime = performance.now() / 1000;
     
-    // CRITICAL FIX: Make lightsaber swing visible and more dramatic
+    // CRITICAL: Force lightsaber to be active and swing if it exists
     if (this.lightsaber) {
-      // Force lightsaber to be active
+      // Force activate if needed
       if (!this.lightsaber.isActive()) {
         this.lightsaber.activate();
       }
       
-      // Make the enemy swing the lightsaber with a random attack style
-      const attackType = Math.floor(Math.random() * 3);
-      this.lightsaber.swing(attackType);
+      // Direct swing at player (fallback to regular swing if target isn't available)
+      try {
+        const playerObj = this.scene.getObjectByName('player');
+        if (playerObj) {
+          const toPlayer = new Vector3().subVectors(playerObj.position, this.position).normalize();
+          this.lightsaber.swingAt(0, toPlayer);
+        } else {
+          console.log("Player not found for targeted swing, using regular swing");
+          this.lightsaber.swing(0);
+        }
+      } catch (error) {
+        console.error("Error during enemy attack:", error);
+        // Fallback to regular swing
+        this.lightsaber.swing(0);
+      }
       
-      // Play swing sound for feedback
-      gameAudio.playSound('lightsaberSwing', { volume: 0.6 });
+      // Ensure attack sound plays
+      gameAudio.playSound('lightsaberSwing', { volume: 0.8 });
     }
     
-    // Reset state after attack animation
+    // Reset attack state after animation completes
     setTimeout(() => {
       if (this.state === EnemyState.ATTACKING) {
         this.state = EnemyState.IDLE;
       }
-    }, 800); // Longer attack animation for more impact
+    }, 800);
   }
   
   takeDamage(amount: number, hitPosition: Vector3): number {

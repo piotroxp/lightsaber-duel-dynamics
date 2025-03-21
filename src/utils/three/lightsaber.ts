@@ -594,4 +594,45 @@ export class Lightsaber extends Group {
       Math.round(g * 255).toString(16).padStart(2, '0') +
       Math.round(b * 255).toString(16).padStart(2, '0');
   }
+
+  // Add method to swing at a specific target
+  swingAt(type: number, targetDirection: Vector3): void {
+    if (!this.active || this.isSwinging) return;
+    
+    this.isSwinging = true;
+    
+    // Store original rotation and position
+    const originalRotation = {
+      x: this.rotation.x,
+      y: this.rotation.y,
+      z: this.rotation.z
+    };
+    
+    const originalPosition = {
+      x: this.position.x,
+      y: this.position.y,
+      z: this.position.z
+    };
+    
+    // Determine swing axis based on swing type and target direction
+    let swingAxis = new Vector3(0, 1, 0); // Default vertical axis
+    
+    if (type === 0) { // Horizontal swing - use up/down axis
+      swingAxis = new Vector3(0, 1, 0);
+    } else if (type === 1) { // Vertical swing - use left/right axis
+      swingAxis = new Vector3(1, 0, 0);
+    } else { // Diagonal swing - use diagonal axis
+      swingAxis = new Vector3(1, 1, 0).normalize();
+    }
+    
+    // Adjust swing direction to point toward target
+    const adjustmentAngle = Math.atan2(targetDirection.x, targetDirection.z);
+    this.rotation.y = adjustmentAngle;
+    
+    // Play swing sound
+    gameAudio.playSound('lightsaberSwing', { volume: 0.5 });
+    
+    // Use existing swing animation but with adjusted starting rotation
+    this.swing(type);
+  }
 }
