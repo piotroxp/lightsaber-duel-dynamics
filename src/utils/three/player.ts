@@ -1,4 +1,3 @@
-
 import {
   Camera,
   Vector3,
@@ -383,5 +382,19 @@ export class Player {
   
   isAlive(): boolean {
     return this.state.health > 0;
+  }
+  
+  getLightsaberPosition(): Vector3 {
+    return this.lightsaber.position.clone();
+  }
+  
+  getLightsaberRotation(): Quaternion {
+    return this.lightsaber.quaternion.clone();
+  }
+  
+  takeDamage(newHealth: number): void {
+    this.state.health = newHealth;
+    // Visual feedback for damage
+    this.showDamageEffect();
   }
 }

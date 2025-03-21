@@ -32,6 +32,8 @@ import { CombatSystem } from './combat';
 import { ParticleSystem } from './effects';
 import gameAudio from './audio';
 import { loadTextureWithFallback } from './textureLoader';
+import { NetworkManager, NetworkPlayer } from '@/utils/network/NetworkManager';
+import { RemotePlayer } from './RemotePlayer';
 
 export class GameScene {
   private container: HTMLElement;
@@ -48,6 +50,10 @@ export class GameScene {
   private onLoadProgress: (progress: number) => void;
   private onLoadComplete: () => void;
   private backgroundMusic: any = null;
+  private networkManager: NetworkManager;
+  private remotePlayers: Map<string, RemotePlayer> = new Map();
+  private isMultiplayer: boolean = false;
+  private isNetworkInitialized: boolean = false;
   
   constructor(
     container: HTMLElement,
@@ -380,6 +386,26 @@ export class GameScene {
       // Update particle systems
       this.particleSystem.update(deltaTime);
       
+      // Add network update for multiplayer
+      if (this.isMultiplayer && this.isNetworkInitialized && this.player) {
+        // Send player updates to network (limit frequency to reduce bandwidth)
+        if (this.clock.elapsedTime % 0.05 < 0.01) {
+          this.networkManager.sendPlayerUpdate(
+            this.player.position,
+            this.player.quaternion,
+            this.player.getLightsaberPosition(),
+            this.player.getLightsaberRotation(),
+            this.player.isAttacking(),
+            this.player.isBlocking()
+          );
+        }
+        
+        // Update remote players
+        this.remotePlayers.forEach(remotePlayer => {
+          remotePlayer.update(deltaTime);
+        });
+      }
+      
       // Render the scene
       this.renderer.render(this.scene, this.camera);
       
@@ -509,5 +535,174 @@ export class GameScene {
       !(child.name?.includes('debug-helper')));
     
     console.log("Debug view disabled");
+  }
+  
+  public initializeMultiplayer(isHost: boolean = true): void {
+    this.isMultiplayer = true;
+    this.networkManager = NetworkManager.getInstance();
+    
+    // Check if joining from URL
+    const isJoiningFromUrl = this.networkManager.checkAndJoinFromUrl();
+    
+    if (isHost && !isJoiningFromUrl) {
+      // Create a new room as host
+      this.networkManager.createRoom();
+      console.log("Creating a new multiplayer room as host");
+    }
+    
+    // Set up network event listeners
+    this.setupNetworkEvents();
+    this.isNetworkInitialized = true;
+  }
+  
+  private setupNetworkEvents(): void {
+    const networkManager = this.networkManager;
+    
+    // Room created event
+    networkManager.onRoomCreated((data) => {
+      console.log(`Room created with ID: ${data.roomId}`);
+      console.log(`Share this link to play together: ${data.joinUrl}`);
+      
+      // Display join link in UI
+      this.displayJoinLink(data.joinUrl);
+    });
+    
+    // Player joined event
+    networkManager.onPlayerJoined((data) => {
+      console.log(`Player joined: ${data.playerId}`);
+      
+      // Create character for new player
+      this.createRemotePlayer(data.playerId);
+      
+      // If we're the host and there are at least 2 players, enable start button
+      if (networkManager.isGameHost() && data.players.length >= 2) {
+        this.enableStartButton();
+      }
+    });
+    
+    // Game started event
+    networkManager.onGameStarted(() => {
+      console.log("Game started!");
+      this.hideMultiplayerUI();
+      this.startMultiplayerGame();
+    });
+    
+    // Player updated event
+    networkManager.onPlayerUpdated((data) => {
+      const remotePlayer = this.remotePlayers.get(data.playerId);
+      if (remotePlayer) {
+        remotePlayer.updateFromNetwork(
+          data.position,
+          data.rotation,
+          data.lightsaberPosition,
+          data.lightsaberRotation,
+          data.isAttacking,
+          data.isBlocking
+        );
+      }
+    });
+    
+    // Player damaged event
+    networkManager.onPlayerDamaged((data) => {
+      if (data.playerId === networkManager.getPlayerId()) {
+        // Local player was hit
+        this.player.takeDamage(data.health);
+        this.onPlayerDamage(data.health);
+      } else {
+        // Remote player was hit
+        const remotePlayer = this.remotePlayers.get(data.playerId);
+        if (remotePlayer) {
+          remotePlayer.setHealth(data.health);
+        }
+      }
+    });
+    
+    // Player defeated event
+    networkManager.onPlayerDefeated((playerId, winnerId) => {
+      if (playerId === networkManager.getPlayerId()) {
+        // Local player was defeated
+        this.onPlayerDefeated();
+      } else {
+        // Remote player was defeated
+        this.onRemotePlayerDefeated(playerId);
+        if (winnerId === networkManager.getPlayerId()) {
+          this.onVictory();
+        }
+      }
+    });
+    
+    // Host disconnected event
+    networkManager.onHostDisconnected(() => {
+      console.log("Host disconnected!");
+      this.onHostDisconnected();
+    });
+    
+    // Error event
+    networkManager.onError((message) => {
+      console.error(`Network error: ${message}`);
+      this.onNetworkError(message);
+    });
+  }
+  
+  // Add methods for creating and updating remote players
+  private createRemotePlayer(playerId: string): void {
+    const remotePlayer = new RemotePlayer(this.scene, playerId);
+    this.remotePlayers.set(playerId, remotePlayer);
+    this.scene.add(remotePlayer);
+  }
+  
+  // UI methods for multiplayer
+  private displayJoinLink(url: string): void {
+    // Implementation depends on your UI framework
+    // This could dispatch an event or update a React state
+    window.dispatchEvent(new CustomEvent('showJoinLink', { detail: { url } }));
+  }
+  
+  private enableStartButton(): void {
+    window.dispatchEvent(new CustomEvent('enableStartButton'));
+  }
+  
+  private hideMultiplayerUI(): void {
+    window.dispatchEvent(new CustomEvent('hideMultiplayerUI'));
+  }
+  
+  public startMultiplayerGame(): void {
+    if (this.isMultiplayer && this.networkManager.isGameHost()) {
+      this.networkManager.startGame();
+    }
+  }
+  
+  private onPlayerDamage(health: number): void {
+    // Update UI with new health value
+    window.dispatchEvent(new CustomEvent('playerDamage', { detail: { health } }));
+  }
+  
+  private onPlayerDefeated(): void {
+    // Show defeat screen
+    window.dispatchEvent(new CustomEvent('playerDefeated'));
+  }
+  
+  private onRemotePlayerDefeated(playerId: string): void {
+    // Remove defeated player from scene
+    const remotePlayer = this.remotePlayers.get(playerId);
+    if (remotePlayer) {
+      this.scene.remove(remotePlayer);
+      this.remotePlayers.delete(playerId);
+    }
+  }
+  
+  private onVictory(): void {
+    // Show victory screen
+    window.dispatchEvent(new CustomEvent('playerVictory'));
+  }
+  
+  private onHostDisconnected(): void {
+    // Show host disconnected message
+    window.dispatchEvent(new CustomEvent('hostDisconnected'));
+  }
+  
+  private onNetworkError(message: string): void {
+    // Show error message
+    window.dispatchEvent(new CustomEvent('networkError', { detail: { message } }));
   }
 }
