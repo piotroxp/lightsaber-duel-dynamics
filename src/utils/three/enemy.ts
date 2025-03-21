@@ -43,7 +43,9 @@ export class Enemy extends Group {
   private staggerTime: number = 0;
   private attacking: boolean = false;
   private blocking: boolean = false;
-  private lastHitTime: number = 0;
+  private lastAttackTime: number = 0;
+  private attackTimer: number = 0;
+  private hasAppliedDamage: boolean = false;
   private state: EnemyState = EnemyState.IDLE;
   
   // AI
@@ -154,14 +156,24 @@ export class Enemy extends Group {
         this.state === EnemyState.STAGGERED) return;
     
     const currentTime = performance.now() / 1000;
-    if (currentTime - this.lastAttackTime < this.attackCooldown) return;
-    
     this.lastAttackTime = currentTime;
     this.state = EnemyState.ATTACKING;
+    this.attackTimer = 0;
+    this.hasAppliedDamage = false;
     
-    // Swing lightsaber
+    // CRITICAL FIX: Make lightsaber swing visible and more dramatic
     if (this.lightsaber) {
-      this.lightsaber.swing();
+      // Force lightsaber to be active
+      if (!this.lightsaber.isActive()) {
+        this.lightsaber.activate();
+      }
+      
+      // Make the enemy swing the lightsaber with a random attack style
+      const attackType = Math.floor(Math.random() * 3);
+      this.lightsaber.swing(attackType);
+      
+      // Play swing sound for feedback
+      gameAudio.playSound('lightsaberSwing', { volume: 0.6 });
     }
     
     // Reset state after attack animation
@@ -169,7 +181,7 @@ export class Enemy extends Group {
       if (this.state === EnemyState.ATTACKING) {
         this.state = EnemyState.IDLE;
       }
-    }, 300);
+    }, 800); // Longer attack animation for more impact
   }
   
   takeDamage(amount: number, hitPosition: Vector3): number {
@@ -201,7 +213,6 @@ export class Enemy extends Group {
     
     // Apply damage
     this.health -= amount;
-    this.lastHitTime = performance.now();
     
     // Enter staggered state if hit
     if (amount > 0 && this.health > 0) {
@@ -448,6 +459,13 @@ export class Enemy extends Group {
     // Skip if the enemy is dead
     if (this.state === EnemyState.DEAD) return;
     
+    // Update attack timer if attacking
+    if (this.state === EnemyState.ATTACKING) {
+      this.attackTimer += deltaTime;
+    } else {
+      this.attackTimer = 0;
+    }
+    
     // Handle animation based on current state
     switch (this.state) {
       case EnemyState.PURSUING:
@@ -502,5 +520,10 @@ export class Enemy extends Group {
     if (this.rightLeg) this.rightLeg.rotation.set(0, 0, 0);
     if (this.leftArm) this.leftArm.rotation.set(0, 0, 0);
     if (this.rightArm) this.rightArm.rotation.set(0, 0, 0);
+  }
+
+  // Add method to access attack timer for combat system
+  getAttackTimer(): number {
+    return this.attackTimer;
   }
 }

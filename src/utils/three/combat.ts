@@ -32,6 +32,48 @@ export class CombatSystem {
   }
   
   update(deltaTime: number): void {
+    // Update player and enemy attack collisions
+    this.checkPlayerAttacks(deltaTime);
+    this.checkEnemyAttacks(deltaTime);
+    
+    // CRITICAL: Force enemy to swing lightsaber and deal damage
+    for (const enemy of this.enemies) {
+      if (enemy.isAlive() && enemy.isAttacking()) {
+        if (!enemy.hasAppliedDamage && enemy.getAttackTimer() > 0.2) {
+          // Apply damage only once during attack animation at the right moment
+          const playerPos = this.player.getPosition();
+          const enemyPos = enemy.getPosition();
+          const distanceToPlayer = enemyPos.distanceTo(playerPos);
+          
+          // Check if player is in range
+          if (distanceToPlayer <= enemy.getAttackRange()) {
+            const damage = enemy.getAttackDamage();
+            
+            // Check if player is blocking in the right direction
+            if (this.player.isBlocking()) {
+              // Create clash effect at lightsaber intersection
+              const saberPos = this.player.getLightsaberPosition();
+              this.createClashEffect(saberPos);
+              
+              // Play clash sound
+              gameAudio.playSound('lightsaberClash', { volume: 0.7 });
+            } else {
+              // Deal damage to player if not blocking
+              this.player.takeDamage(damage, enemyPos);
+            }
+            
+            // Mark damage as applied for this attack
+            enemy.hasAppliedDamage = true;
+          }
+        }
+      } else {
+        // Reset damage flag when not attacking
+        enemy.hasAppliedDamage = false;
+      }
+    }
+  }
+  
+  private checkPlayerAttacks(deltaTime: number): void {
     // Check for combat interactions
     this.checkCombatInteractions(deltaTime);
     
@@ -40,7 +82,9 @@ export class CombatSystem {
     
     // Update existing combat effects
     this.updateCombatEffects(deltaTime);
-    
+  }
+  
+  private checkEnemyAttacks(deltaTime: number): void {
     // Update enemy attack logic
     this.updateEnemyAttacks(deltaTime);
   }
