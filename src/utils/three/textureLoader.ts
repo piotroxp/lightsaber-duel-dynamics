@@ -1,7 +1,8 @@
-import { TextureLoader, SRGBColorSpace, RepeatWrapping, CanvasTexture } from 'three';
+
+import { TextureLoader, SRGBColorSpace, RepeatWrapping, CanvasTexture, Texture } from 'three';
 
 // Reliable texture loader with fallback
-export const loadTextureWithFallback = (path: string): Promise<THREE.Texture> => {
+export const loadTextureWithFallback = (path: string): Promise<Texture> => {
   return new Promise((resolve) => {
     const loader = new TextureLoader();
     
@@ -9,7 +10,7 @@ export const loadTextureWithFallback = (path: string): Promise<THREE.Texture> =>
       path,
       (texture) => {
         // Success callback
-        texture.encoding = SRGBColorSpace;
+        texture.colorSpace = SRGBColorSpace; // Use colorSpace instead of encoding
         texture.wrapS = RepeatWrapping;
         texture.wrapT = RepeatWrapping;
         texture.repeat.set(10, 10);
@@ -45,4 +46,4 @@ export const loadTextureWithFallback = (path: string): Promise<THREE.Texture> =>
       }
     );
   });
-}; 
+};

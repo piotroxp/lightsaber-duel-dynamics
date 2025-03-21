@@ -341,21 +341,27 @@ export class GameScene {
   }
   
   private createEnemies(): void {
-    // Create an enemy
-    const enemy = new Enemy(this.scene);
-    
-    // Set the enemy's position
-    enemy.position.set(
-      (Math.random() - 0.5) * 8,
-      0,
-      (Math.random() - 0.5) * 8
-    );
-    
-    this.scene.add(enemy);
-    this.enemies.push(enemy);
-    
-    // Add enemy to combat system
-    this.combatSystem.addEnemy(enemy);
+    try {
+      // Create an enemy
+      const enemy = new Enemy(this.scene);
+      
+      // Set the enemy's position
+      const position = new Vector3(
+        (Math.random() - 0.5) * 8,
+        0,
+        (Math.random() - 0.5) * 8
+      );
+      
+      enemy.position.copy(position);
+      
+      this.scene.add(enemy);
+      this.enemies.push(enemy);
+      
+      // Add enemy to combat system
+      this.combatSystem.addEnemy(enemy);
+    } catch (error) {
+      console.error("Error creating enemies:", error);
+    }
   }
   
   private setupEventListeners(): void {
@@ -525,21 +531,31 @@ export class GameScene {
       !(child.name?.includes('debug-helper')));
     
     // Reset camera position to see everything
-    this.camera.position.set(0, 10, 10);
+    this.camera.position.set(0, 10, 15);
     this.camera.lookAt(0, 0, 0);
     
-    // Add axis helpers to show X, Y, Z directions
-    const axisHelper = new AxesHelper(5);
-    axisHelper.name = 'debug-helper-axis';
-    this.scene.add(axisHelper);
+    // Add bright colored boxes to make the scene visible
+    const debugBox = new Mesh(
+      new BoxGeometry(3, 3, 3),
+      new MeshBasicMaterial({ 
+        color: 0xff00ff,
+        wireframe: true
+      })
+    );
+    debugBox.position.set(0, 1.5, 0);
+    debugBox.name = 'debug-helper-box';
+    this.scene.add(debugBox);
     
     // Add a grid helper
     const gridHelper = new GridHelper(20, 20, 0xffffff, 0x888888);
     gridHelper.name = 'debug-helper-grid';
     this.scene.add(gridHelper);
     
-    // Make debug elements larger and more visible
-    this.addDebugElements(true);
+    // Make lighting very bright
+    const brightLight = new DirectionalLight(0xffffff, 3);
+    brightLight.position.set(5, 10, 5);
+    brightLight.name = 'debug-helper-light';
+    this.scene.add(brightLight);
     
     console.log("Debug view enabled");
   }

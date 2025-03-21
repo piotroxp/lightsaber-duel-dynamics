@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 
@@ -5,14 +6,12 @@ interface LoadingScreenProps {
   progress: number;
   isLoaded: boolean;
   onStart: () => void;
-  onSkip: () => void;
 }
 
 const LoadingScreen: React.FC<LoadingScreenProps> = ({ 
   progress, 
   isLoaded, 
-  onStart,
-  onSkip
+  onStart
 }) => {
   const [showTip, setShowTip] = useState(0);
   const [showStartButton, setShowStartButton] = useState(false);
@@ -32,12 +31,14 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
     }, 3000);
     
     // Show start button when loaded
-    if (isLoaded) {
-      setShowStartButton(true);
+    if (progress >= 0.95) {
+      setTimeout(() => {
+        setShowStartButton(true);
+      }, 500);
     }
     
     return () => clearInterval(interval);
-  }, [isLoaded, tips.length]);
+  }, [progress, tips.length]);
   
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-50">
@@ -51,16 +52,31 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
         </div>
         <p className="text-gray-300 text-xl">{Math.floor(progress * 100)}%</p>
         
-        {/* Add a skip button in case loading gets stuck */}
-        {progress > 0.1 && progress < 0.99 && (
-          <button 
-            onClick={onSkip} 
-            className="mt-8 px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700"
+        <div className="h-12">
+          <motion.p
+            key={showTip}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.5 }}
+            className="text-gray-400"
           >
-            Skip Loading
-          </button>
-        )}
+            {tips[showTip]}
+          </motion.p>
+        </div>
       </div>
+      
+      {showStartButton && (
+        <motion.button 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="mt-8 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          onClick={onStart}
+        >
+          Start Game
+        </motion.button>
+      )}
     </div>
   );
 };
