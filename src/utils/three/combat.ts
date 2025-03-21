@@ -1,150 +1,118 @@
 
-import { Vector3, Scene } from 'three';
+import { Scene, Raycaster, Vector3, Mesh, Group, Object3D } from 'three';
 import { Player } from './player';
 import { Enemy } from './enemy';
-import { createSaberClashEffect } from './effects';
 import gameAudio from './audio';
-
-export interface CombatState {
-  inProgress: boolean;
-  lastClashTime: number;
-  clashCooldown: number;
-}
 
 export class CombatSystem {
   private scene: Scene;
   private player: Player;
   private enemies: Enemy[] = [];
-  private state: CombatState = {
-    inProgress: false,
-    lastClashTime: 0,
-    clashCooldown: 200, // ms
-  };
+  private raycaster: Raycaster;
+  private hitCooldown: number = 0.4; // seconds
+  private lastHitTime: number = 0;
   
   constructor(scene: Scene, player: Player) {
     this.scene = scene;
     this.player = player;
+    this.raycaster = new Raycaster();
   }
   
   addEnemy(enemy: Enemy): void {
     this.enemies.push(enemy);
   }
   
-  removeEnemy(enemy: Enemy): void {
-    const index = this.enemies.indexOf(enemy);
-    if (index !== -1) {
-      this.enemies.splice(index, 1);
-    }
+  getEnemies(): Enemy[] {
+    return this.enemies;
   }
   
   update(): void {
-    const time = performance.now();
+    // Check for player attacks hitting enemies
+    this.checkPlayerAttacks();
     
-    // Check for lightsaber clashing
-    if (time - this.state.lastClashTime > this.state.clashCooldown) {
-      for (const enemy of this.enemies) {
-        if (!enemy.isAlive()) continue;
-        
-        // Get saber positions
-        const playerSaberTip = this.player.getSaberTipPosition();
-        const enemySaberTip = enemy.getSaberTipPosition();
-        
-        // Check distance between sabers
-        const clashDistanceThreshold = 0.3;
-        const distance = playerSaberTip.distanceTo(enemySaberTip);
-        
-        if (distance < clashDistanceThreshold) {
-          // Create clash effect at midpoint between sabers
-          const clashPosition = new Vector3().addVectors(
-            playerSaberTip,
-            enemySaberTip
-          ).multiplyScalar(0.5);
-          
-          createSaberClashEffect(this.scene, clashPosition, '#ffffff');
-          gameAudio.playSound('lightsaberClash', { volume: 0.7 });
-          
-          this.state.lastClashTime = time;
-          break;
-        }
-      }
-    }
+    // Check for enemy attacks hitting player
+    this.checkEnemyAttacks();
     
-    // Process player attacks
-    if (this.player.isAttacking()) {
-      const playerPosition = this.player.getPosition();
-      const playerDirection = this.player.getDirection();
-      
-      for (const enemy of this.enemies) {
-        if (!enemy.isAlive()) continue;
-        
-        const enemyPosition = enemy.getPosition().clone();
-        enemyPosition.y += 1.0; // Aim at the enemy's torso
-        
-        // Calculate vector from player to enemy
-        const toEnemy = new Vector3().subVectors(enemyPosition, playerPosition);
-        
-        // Check if enemy is in front of player (dot product with player's direction)
-        const dot = toEnemy.normalize().dot(playerDirection);
-        const attackRange = 2.5;
-        const attackAngle = 0.5; // cos of angle (roughly 60 degrees)
-        
-        if (dot > attackAngle && playerPosition.distanceTo(enemyPosition) < attackRange) {
-          // Calculate attack source for visual effect
-          const attackSource = this.player.getSaberTipPosition();
-          
-          // Enemy takes damage if not blocking or if attack from behind
-          const damageDealt = enemy.takeDamage(20, attackSource);
-          
-          if (damageDealt > 0) {
-            // Play hit sound based on whether enemy blocked or not
-            if (enemy.isBlocking()) {
-              gameAudio.playSound('lightsaberClash', { volume: 0.6 });
-            } else {
-              gameAudio.playSound('enemyHit', { volume: 0.7 });
-            }
-          }
-        }
-      }
-    }
+    // Remove dead enemies
+    this.enemies = this.enemies.filter(enemy => enemy.isAlive());
+  }
+  
+  private checkPlayerAttacks(): void {
+    if (!this.player.isAttacking()) return;
     
-    // Process enemy attacks
+    const currentTime = performance.now() / 1000;
+    if (currentTime - this.lastHitTime < this.hitCooldown) return;
+    
+    // Get lightsaber position and direction
+    const lightsaberTip = this.player.getLightsaberPosition();
+    const direction = new Vector3(0, 0, -1).applyQuaternion(this.player.getQuaternion());
+    
+    // Set up raycaster for hit detection
+    this.raycaster.set(lightsaberTip, direction);
+    
+    // Check for hits against enemies
     for (const enemy of this.enemies) {
-      if (!enemy.isAlive() || !enemy.isAttacking()) continue;
+      if (!enemy.isAlive()) continue;
       
-      const playerPosition = this.player.getPosition();
-      const enemyPosition = enemy.getPosition();
+      // Simple distance check for hits
+      const distanceToEnemy = lightsaberTip.distanceTo(enemy.position);
       
-      // Check distance
-      const attackRange = enemy.getAttackRange();
-      if (enemyPosition.distanceTo(playerPosition) <= attackRange) {
-        // Calculate attack source for visual effect
-        const attackSource = enemy.getSaberTipPosition();
+      if (distanceToEnemy < 2.0) {
+        // Enemy is hit!
+        console.log("Player hit enemy!");
         
-        // Player takes damage
-        const damageAmount = enemy.getAttackDamage();
-        const damageDealt = this.player.takeDamage(damageAmount, attackSource);
-        
-        if (damageDealt > 0) {
-          // Play appropriate sound
-          if (this.player.isBlocking()) {
-            gameAudio.playSound('lightsaberClash', { volume: 0.6 });
-          } else {
-            gameAudio.playSound('playerHit', { volume: 0.7 });
+        if (enemy.isBlocking()) {
+          // Enemy blocked the attack
+          try {
+            gameAudio.playSound('lightsaber_clash', { volume: 0.7 });
+          } catch (error) {
+            console.warn("Failed to play clash sound:", error);
           }
+        } else {
+          // Enemy took damage
+          this.lastHitTime = currentTime;
+          
+          try {
+            gameAudio.playSound('enemy_hit', { volume: 0.5 });
+          } catch (error) {
+            console.warn("Failed to play hit sound:", error);
+          }
+          
+          // Apply damage to enemy
+          enemy.takeDamage(20, direction);
         }
       }
     }
   }
   
-  isPlayerAlive(): boolean {
-    return this.player.isAlive();
-  }
-  
-  areAllEnemiesDead(): boolean {
-    return this.enemies.every(enemy => !enemy.isAlive());
-  }
-  
-  getEnemies(): Enemy[] {
-    return this.enemies;
+  private checkEnemyAttacks(): void {
+    for (const enemy of this.enemies) {
+      if (!enemy.isAttacking() || !enemy.isAlive()) continue;
+      
+      // Check if enemy is close enough to hit player
+      const distanceToPlayer = enemy.position.distanceTo(this.player.position);
+      
+      if (distanceToPlayer < 2.0) {
+        // Player is hit!
+        if (this.player.isBlocking()) {
+          // Player blocked the attack
+          try {
+            gameAudio.playSound('lightsaber_clash', { volume: 0.7 });
+          } catch (error) {
+            console.warn("Failed to play clash sound:", error);
+          }
+        } else {
+          // Player took damage
+          try {
+            gameAudio.playSound('player_hit', { volume: 0.5 });
+          } catch (error) {
+            console.warn("Failed to play hit sound:", error);
+          }
+          
+          // Apply damage to player
+          this.player.takeDamage(10);
+        }
+      }
+    }
   }
 }

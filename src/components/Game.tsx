@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import LoadingScreen from './LoadingScreen';
@@ -17,6 +18,7 @@ interface GameState {
   isStarted: boolean;
   hasError: boolean;
   debugMode: boolean;
+  sceneReady: boolean;
 }
 
 const Game: React.FC = () => {
@@ -34,12 +36,13 @@ const Game: React.FC = () => {
     isStarted: false,
     hasError: false,
     debugMode: true, // Start with debug mode on
+    sceneReady: false
   });
   
   const initializationAttempts = useRef(0);
   const maxInitAttempts = 3;
   
-  const initializeGame = async () => {
+  const initializeGame = useCallback(async () => {
     // Reset states at start
     setGameState(prev => ({ 
       ...prev, 
@@ -61,7 +64,11 @@ const Game: React.FC = () => {
         console.log("Loading complete callback triggered!");
         // Add a small timeout to ensure UI updates properly
         setTimeout(() => {
-          setGameState(prev => ({ ...prev, isLoading: false }));
+          setGameState(prev => ({ 
+            ...prev, 
+            isLoading: false,
+            sceneReady: true
+          }));
         }, 1000);
       };
       
@@ -72,14 +79,19 @@ const Game: React.FC = () => {
           gameSceneRef.current = null;
         }
         
+        // Create the game scene
         const gameScene = new GameScene(
           containerRef.current,
           onLoadProgress,
           onLoadComplete
         );
         
-        await gameScene.initialize();
+        // Store the game scene reference immediately
         gameSceneRef.current = gameScene;
+        console.log("Game scene created, initializing...");
+        
+        // Initialize the game scene
+        await gameScene.initialize();
         
         // Force enable debug view to fix visibility issues
         setTimeout(() => {
@@ -87,9 +99,9 @@ const Game: React.FC = () => {
             gameSceneRef.current.enableDebugView();
             console.log("Debug view enabled in game initialization");
           }
-        }, 1000);
+        }, 500);
         
-        console.log("Game scene initialized");
+        console.log("Game scene initialized successfully");
       } catch (error) {
         console.error("Failed to initialize game:", error);
         setGameState(prev => ({ 
@@ -100,7 +112,7 @@ const Game: React.FC = () => {
         toast.error("Game initialization failed. Try refreshing the page.");
       }
     }
-  };
+  }, []);
   
   useEffect(() => {
     initializeGame();
@@ -111,7 +123,7 @@ const Game: React.FC = () => {
         gameSceneRef.current = null;
       }
     };
-  }, []);
+  }, [initializeGame]);
   
   useEffect(() => {
     const forceRenderTimeout = setTimeout(() => {
@@ -125,7 +137,8 @@ const Game: React.FC = () => {
   }, []);
   
   const handleGameStart = useCallback(() => {
-    console.log("Game start triggered");
+    console.log("Game start triggered", { sceneReady: gameState.sceneReady, gameSceneRef: !!gameSceneRef.current });
+    
     setGameState(prev => ({
       ...prev,
       isStarted: true
@@ -138,16 +151,27 @@ const Game: React.FC = () => {
       if (gameSceneRef.current) {
         console.log("Starting game elements...");
         gameSceneRef.current.startBackgroundMusic();
-        gameSceneRef.current.lockControls();
+        
+        // Delay lock controls to ensure everything is initialized
+        setTimeout(() => {
+          if (gameSceneRef.current) {
+            gameSceneRef.current.lockControls();
+          }
+        }, 500);
       } else {
         console.error("Game scene not available at start");
         toast.error("Game scene not fully initialized. Try refreshing the page.");
+        
+        // Attempt to recover by re-initializing
+        setTimeout(() => {
+          handleRetryLoading();
+        }, 1000);
       }
     } catch (error) {
       console.error("Error starting game:", error);
       toast.error("Error starting game. You may experience issues with audio or controls.");
     }
-  }, []);
+  }, [gameState.sceneReady]);
   
   const handleRetryLoading = useCallback(() => {
     console.log("Manually retrying game initialization");
@@ -158,13 +182,14 @@ const Game: React.FC = () => {
         ...prev, 
         isLoading: true,
         loadingProgress: 0.1,
-        hasError: false
+        hasError: false,
+        sceneReady: false
       }));
       initializeGame();
     } else {
       toast.error("Maximum retry attempts reached. Please refresh the page.");
     }
-  }, []);
+  }, [initializeGame]);
   
   const handleRestart = () => {
     window.location.reload();
@@ -226,6 +251,11 @@ const Game: React.FC = () => {
         />
       )}
       
+      <div 
+        ref={containerRef} 
+        className="absolute inset-0 w-full h-full"
+      />
+      
       {gameState.isStarted && (
         <div className="absolute top-4 left-0 right-0 flex justify-center items-center mx-auto z-10 pointer-events-none">
           <div className="flex items-center justify-between w-4/5 max-w-3xl bg-gray-900/70 p-3 rounded-lg">
@@ -267,8 +297,9 @@ const Game: React.FC = () => {
             <button 
               onClick={handleGameStart} 
               className="px-8 py-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+              disabled={!gameState.sceneReady}
             >
-              Start Game
+              {gameState.sceneReady ? "Start Game" : "Loading Scene..."}
             </button>
           </div>
         </motion.div>
@@ -281,6 +312,11 @@ const Game: React.FC = () => {
       >
         {gameState.debugMode ? "Disable Debug" : "Enable Debug"}
       </button>
+      
+      {/* Game info overlay */}
+      <div className="fixed top-6 right-6 bg-gray-800/80 text-white px-4 py-2 rounded-md z-40 text-sm">
+        Scene: {gameState.sceneReady ? "Ready" : "Loading"}
+      </div>
       
       {/* Game over and victory screens */}
       {gameState.gameOver && (

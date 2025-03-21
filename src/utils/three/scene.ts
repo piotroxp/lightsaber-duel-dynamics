@@ -1,3 +1,4 @@
+
 import {
   Scene,
   WebGLRenderer,
@@ -12,9 +13,6 @@ import {
   Clock,
   Fog,
   HemisphereLight,
-  TextureLoader,
-  RepeatWrapping,
-  SRGBColorSpace,
   PointLight,
   Color,
   Raycaster,
@@ -24,16 +22,13 @@ import {
   FogExp2,
   AxesHelper,
   GridHelper,
+  SphereGeometry,
 } from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { Player } from './player';
 import { Enemy } from './enemy';
 import { CombatSystem } from './combat';
-import { ParticleSystem } from './effects';
 import gameAudio from './audio';
-import { loadTextureWithFallback } from './textureLoader';
-import { NetworkManager, NetworkPlayer } from '@/utils/network/NetworkManager';
-import { RemotePlayer } from './RemotePlayer';
 
 export class GameScene {
   private container: HTMLElement;
@@ -44,16 +39,11 @@ export class GameScene {
   private player: Player;
   private enemies: Enemy[] = [];
   private combatSystem: CombatSystem;
-  private particleSystem: ParticleSystem;
   private clock: Clock = new Clock();
   private isInitialized: boolean = false;
   private onLoadProgress: (progress: number) => void;
   private onLoadComplete: () => void;
   private backgroundMusic: any = null;
-  private networkManager: NetworkManager;
-  private remotePlayers: Map<string, RemotePlayer> = new Map();
-  private isMultiplayer: boolean = false;
-  private isNetworkInitialized: boolean = false;
   
   constructor(
     container: HTMLElement,
@@ -84,10 +74,11 @@ export class GameScene {
     // Create camera third (now renderer exists)
     this.setupCamera();
     
-    // Create other components
+    // Create player (needs camera reference)
     this.player = new Player(this.camera, this.scene);
+    
+    // Create combat system (needs player and scene references)
     this.combatSystem = new CombatSystem(this.scene, this.player);
-    this.particleSystem = new ParticleSystem(this.scene);
     
     // Setup event listeners
     this.setupEventListeners();
@@ -99,121 +90,61 @@ export class GameScene {
   }
   
   async initialize(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      // Set a timeout to prevent infinite loading
-      const timeout = setTimeout(() => {
-        console.warn('Scene initialization timed out - continuing anyway');
-        this.isInitialized = true;
-        if (this.onLoadComplete) this.onLoadComplete();
-        resolve();
-      }, 10000); // 10 second timeout
-      
-      console.log("Starting initialization");
-      
-      try {
-        // Add a delay at the start to ensure DOM is ready
-        setTimeout(() => {
-          this.initializeWithProgress(resolve, timeout);
-        }, 100);
-      } catch (error) {
-        console.error("Initialization failed:", error);
-        clearTimeout(timeout);
-        this.isInitialized = true;
-        if (this.onLoadComplete) this.onLoadComplete();
-        resolve(); // Resolve anyway to prevent stuck loading
-      }
-    });
-  }
-  
-  private async initializeWithProgress(resolve: () => void, timeout: NodeJS.Timeout): Promise<void> {
+    console.log("Starting game scene initialization");
+    
+    if (this.isInitialized) {
+      console.log("Scene already initialized");
+      this.onLoadComplete();
+      return;
+    }
+    
     try {
+      // Report starting progress
+      this.onLoadProgress(0.1);
+      
       // Setup lighting
       console.log("Setting up lighting...");
       this.setupLighting();
-      this.onLoadProgress(0.2);
+      this.onLoadProgress(0.4);
       
       // Create environment
       console.log("Creating environment...");
       this.createEnvironment();
-      this.onLoadProgress(0.4);
+      this.onLoadProgress(0.6);
       
       // Add debug elements
       console.log("Adding debug elements...");
       this.addDebugElements(true);
-      this.onLoadProgress(0.6);
+      this.onLoadProgress(0.8);
       
       // Create enemies
       console.log("Creating enemies...");
       this.createEnemies();
-      this.onLoadProgress(0.8);
+      this.onLoadProgress(0.9);
       
       // Start animation loop
       console.log("Starting animation loop...");
       this.animate();
-      this.onLoadProgress(0.9);
       
-      // Allow a small delay before completing
+      // Mark as initialized
+      this.isInitialized = true;
+      this.onLoadProgress(1.0);
+      
+      // Report completion after a short delay
       setTimeout(() => {
-        clearTimeout(timeout);
-        this.isInitialized = true;
-        this.onLoadProgress(1.0);
         console.log("Initialization complete!");
-        if (this.onLoadComplete) this.onLoadComplete();
-        resolve();
+        this.onLoadComplete();
       }, 500);
     } catch (error) {
       console.error("Error during initialization:", error);
-      clearTimeout(timeout);
-      this.isInitialized = true;
-      if (this.onLoadComplete) this.onLoadComplete();
-      resolve(); // Resolve anyway to prevent stuck loading
-    }
-  }
-  
-  private async loadAssets(): Promise<boolean> {
-    try {
-      // Initialize audio with better progress tracking and error handling
-      try {
-        await gameAudio.initialize((progress) => {
-          console.log("Audio loading progress:", progress);
-          this.onLoadProgress(progress * 0.8); // Audio is 80% of loading
-        });
-      } catch (audioError) {
-        console.error("Audio initialization error:", audioError);
-        // Continue without audio
-        this.onLoadProgress(0.8); // Skip to 80% since audio failed
-      }
       
-      // Load textures with error handling
-      try {
-        const groundTexture = await loadTextureWithFallback('/textures/ground.jpg');
-        // Use groundTexture...
-      } catch (textureError) {
-        console.error("Texture loading error:", textureError);
-        // Continue with default textures
-      }
-      
-      // Always progress to completion even if some assets fail
+      // Still mark as initialized to prevent getting stuck
       this.isInitialized = true;
       this.onLoadProgress(1.0);
       
-      // Force completion
-      if (this.onLoadComplete) {
-        setTimeout(() => {
-          this.onLoadComplete();
-        }, 1000);
-      }
-      
-      return true;
-    } catch (error) {
-      console.error("Error loading assets:", error);
-      // Still complete loading even if there's an error
-      this.isInitialized = true;
-      this.onLoadProgress(1.0);
-      if (this.onLoadComplete) {
+      setTimeout(() => {
         this.onLoadComplete();
-      }
-      return false;
+      }, 500);
     }
   }
   
@@ -343,19 +274,15 @@ export class GameScene {
       const enemy = new Enemy(this.scene);
       
       // Set the enemy's position
-      const position = new Vector3(
-        (Math.random() - 0.5) * 8,
-        0,
-        (Math.random() - 0.5) * 8
-      );
-      
-      enemy.position.copy(position);
+      enemy.position.set(0, 0, -5);
       
       this.scene.add(enemy);
       this.enemies.push(enemy);
       
       // Add enemy to combat system
       this.combatSystem.addEnemy(enemy);
+      
+      console.log("Enemy created at position:", enemy.position);
     } catch (error) {
       console.error("Error creating enemies:", error);
     }
@@ -391,39 +318,29 @@ export class GameScene {
       
       const deltaTime = this.clock.getDelta();
       
-      // Update player and enemies
+      // Update player
       if (this.player) {
         this.player.update(deltaTime);
       }
       
+      // Update enemies
       for (const enemy of this.enemies) {
-        enemy.update(deltaTime, this.player);
+        try {
+          enemy.update(
+            deltaTime,
+            this.player.position,
+            new Vector3(0, 0, 1) // Forward direction as fallback
+          );
+        } catch (error) {
+          console.error("Error updating enemy:", error);
+        }
       }
       
       // Update combat system
-      this.combatSystem.update();
-      
-      // Update particle systems
-      this.particleSystem.update(deltaTime);
-      
-      // Add network update for multiplayer
-      if (this.isMultiplayer && this.isNetworkInitialized && this.player) {
-        // Send player updates to network (limit frequency to reduce bandwidth)
-        if (this.clock.elapsedTime % 0.05 < 0.01) {
-          this.networkManager.sendPlayerUpdate(
-            this.player.position,
-            this.player.quaternion,
-            this.player.getLightsaberPosition(),
-            this.player.getLightsaberRotation(),
-            this.player.isAttacking(),
-            this.player.isBlocking()
-          );
-        }
-        
-        // Update remote players
-        this.remotePlayers.forEach(remotePlayer => {
-          remotePlayer.update(deltaTime);
-        });
+      try {
+        this.combatSystem.update();
+      } catch (error) {
+        console.error("Error updating combat system:", error);
       }
       
       // Render the scene
@@ -440,7 +357,7 @@ export class GameScene {
   }
   
   unlockControls(): void {
-    if (this.controls.isLocked) {
+    if (this.controls && this.controls.isLocked) {
       this.controls.unlock();
     }
   }
@@ -452,22 +369,31 @@ export class GameScene {
   }
   
   startBackgroundMusic(): void {
-    this.backgroundMusic = gameAudio.playSound('backgroundMusic', {
-      loop: true,
-      volume: 0.3
-    });
+    try {
+      this.backgroundMusic = gameAudio.playSound('backgroundMusic', {
+        loop: true,
+        volume: 0.3
+      });
+      console.log("Background music started");
+    } catch (error) {
+      console.error("Failed to start background music:", error);
+    }
   }
   
   stopBackgroundMusic(): void {
     if (this.backgroundMusic) {
-      this.backgroundMusic.stop();
-      this.backgroundMusic = null;
+      try {
+        this.backgroundMusic.stop();
+        this.backgroundMusic = null;
+        console.log("Background music stopped");
+      } catch (error) {
+        console.error("Failed to stop background music:", error);
+      }
     }
   }
   
   cleanup(): void {
-    // Stop animation loop
-    cancelAnimationFrame(this.animate as any);
+    console.log("Cleaning up game scene");
     
     // Stop audio
     this.stopBackgroundMusic();
@@ -477,10 +403,20 @@ export class GameScene {
     window.removeEventListener('resize', this.onWindowResize.bind(this));
     
     // Remove renderer
-    this.container.removeChild(this.renderer.domElement);
+    if (this.container && this.renderer) {
+      try {
+        this.container.removeChild(this.renderer.domElement);
+      } catch (error) {
+        console.error("Error removing renderer:", error);
+      }
+    }
     
     // Dispose of resources
-    this.renderer.dispose();
+    if (this.renderer) {
+      this.renderer.dispose();
+    }
+    
+    console.log("Game scene cleanup complete");
   }
   
   getPlayer(): Player {
@@ -489,35 +425,6 @@ export class GameScene {
   
   getCombatSystem(): CombatSystem {
     return this.combatSystem;
-  }
-  
-  private addDebugElements(enhanced = false): void {
-    // Remove existing debug elements if any
-    this.scene.children = this.scene.children.filter(child => 
-      !child.name?.includes('debug'));
-    
-    // Add a bright colored box to the scene center
-    const debugBox = new Mesh(
-      new BoxGeometry(enhanced ? 2 : 1, enhanced ? 2 : 1, enhanced ? 2 : 1),
-      new MeshBasicMaterial({ 
-        color: 0xff00ff,
-        wireframe: true
-      })
-    );
-    debugBox.position.set(0, enhanced ? 3 : 1, 0);
-    debugBox.name = 'debug-box';
-    this.scene.add(debugBox);
-    
-    // Add a solid box inside
-    const innerBox = new Mesh(
-      new BoxGeometry(enhanced ? 1.8 : 0.9, enhanced ? 1.8 : 0.9, enhanced ? 1.8 : 0.9),
-      new MeshBasicMaterial({ color: 0xff00ff })
-    );
-    innerBox.position.set(0, enhanced ? 3 : 1, 0);
-    innerBox.name = 'debug-box-inner';
-    this.scene.add(innerBox);
-    
-    console.log("Enhanced debug elements added to scene");
   }
   
   public enableDebugView(): void {
@@ -548,6 +455,20 @@ export class GameScene {
     gridHelper.name = 'debug-helper-grid';
     this.scene.add(gridHelper);
     
+    // Add axes helper to show orientation
+    const axesHelper = new AxesHelper(5);
+    axesHelper.name = 'debug-helper-axes';
+    this.scene.add(axesHelper);
+    
+    // Add a bright sphere at origin to check rendering
+    const originSphere = new Mesh(
+      new SphereGeometry(0.5, 16, 16),
+      new MeshBasicMaterial({ color: 0xffff00 })
+    );
+    originSphere.name = 'debug-helper-origin';
+    originSphere.position.set(0, 1, 0);
+    this.scene.add(originSphere);
+    
     // Make lighting very bright
     const brightLight = new DirectionalLight(0xffffff, 3);
     brightLight.position.set(5, 10, 5);
@@ -565,174 +486,5 @@ export class GameScene {
       !(child.name?.includes('debug-helper')));
     
     console.log("Debug view disabled");
-  }
-  
-  public initializeMultiplayer(isHost: boolean = true): void {
-    this.isMultiplayer = true;
-    this.networkManager = NetworkManager.getInstance();
-    
-    // Check if joining from URL
-    const isJoiningFromUrl = this.networkManager.checkAndJoinFromUrl();
-    
-    if (isHost && !isJoiningFromUrl) {
-      // Create a new room as host
-      this.networkManager.createRoom();
-      console.log("Creating a new multiplayer room as host");
-    }
-    
-    // Set up network event listeners
-    this.setupNetworkEvents();
-    this.isNetworkInitialized = true;
-  }
-  
-  private setupNetworkEvents(): void {
-    const networkManager = this.networkManager;
-    
-    // Room created event
-    networkManager.onRoomCreated((data) => {
-      console.log(`Room created with ID: ${data.roomId}`);
-      console.log(`Share this link to play together: ${data.joinUrl}`);
-      
-      // Display join link in UI
-      this.displayJoinLink(data.joinUrl);
-    });
-    
-    // Player joined event
-    networkManager.onPlayerJoined((data) => {
-      console.log(`Player joined: ${data.playerId}`);
-      
-      // Create character for new player
-      this.createRemotePlayer(data.playerId);
-      
-      // If we're the host and there are at least 2 players, enable start button
-      if (networkManager.isGameHost() && data.players.length >= 2) {
-        this.enableStartButton();
-      }
-    });
-    
-    // Game started event
-    networkManager.onGameStarted(() => {
-      console.log("Game started!");
-      this.hideMultiplayerUI();
-      this.startMultiplayerGame();
-    });
-    
-    // Player updated event
-    networkManager.onPlayerUpdated((data) => {
-      const remotePlayer = this.remotePlayers.get(data.playerId);
-      if (remotePlayer) {
-        remotePlayer.updateFromNetwork(
-          data.position,
-          data.rotation,
-          data.lightsaberPosition,
-          data.lightsaberRotation,
-          data.isAttacking,
-          data.isBlocking
-        );
-      }
-    });
-    
-    // Player damaged event
-    networkManager.onPlayerDamaged((data) => {
-      if (data.playerId === networkManager.getPlayerId()) {
-        // Local player was hit
-        this.player.takeDamage(data.health);
-        this.onPlayerDamage(data.health);
-      } else {
-        // Remote player was hit
-        const remotePlayer = this.remotePlayers.get(data.playerId);
-        if (remotePlayer) {
-          remotePlayer.setHealth(data.health);
-        }
-      }
-    });
-    
-    // Player defeated event
-    networkManager.onPlayerDefeated((playerId, winnerId) => {
-      if (playerId === networkManager.getPlayerId()) {
-        // Local player was defeated
-        this.onPlayerDefeated();
-      } else {
-        // Remote player was defeated
-        this.onRemotePlayerDefeated(playerId);
-        if (winnerId === networkManager.getPlayerId()) {
-          this.onVictory();
-        }
-      }
-    });
-    
-    // Host disconnected event
-    networkManager.onHostDisconnected(() => {
-      console.log("Host disconnected!");
-      this.onHostDisconnected();
-    });
-    
-    // Error event
-    networkManager.onError((message) => {
-      console.error(`Network error: ${message}`);
-      this.onNetworkError(message);
-    });
-  }
-  
-  // Add methods for creating and updating remote players
-  private createRemotePlayer(playerId: string): void {
-    const remotePlayer = new RemotePlayer(this.scene, playerId);
-    this.remotePlayers.set(playerId, remotePlayer);
-    this.scene.add(remotePlayer);
-  }
-  
-  // UI methods for multiplayer
-  private displayJoinLink(url: string): void {
-    // Implementation depends on your UI framework
-    // This could dispatch an event or update a React state
-    window.dispatchEvent(new CustomEvent('showJoinLink', { detail: { url } }));
-  }
-  
-  private enableStartButton(): void {
-    window.dispatchEvent(new CustomEvent('enableStartButton'));
-  }
-  
-  private hideMultiplayerUI(): void {
-    window.dispatchEvent(new CustomEvent('hideMultiplayerUI'));
-  }
-  
-  public startMultiplayerGame(): void {
-    if (this.isMultiplayer && this.networkManager.isGameHost()) {
-      this.networkManager.startGame();
-    }
-  }
-  
-  private onPlayerDamage(health: number): void {
-    // Update UI with new health value
-    window.dispatchEvent(new CustomEvent('playerDamage', { detail: { health } }));
-  }
-  
-  private onPlayerDefeated(): void {
-    // Show defeat screen
-    window.dispatchEvent(new CustomEvent('playerDefeated'));
-  }
-  
-  private onRemotePlayerDefeated(playerId: string): void {
-    // Remove defeated player from scene
-    const remotePlayer = this.remotePlayers.get(playerId);
-    if (remotePlayer) {
-      this.scene.remove(remotePlayer);
-      this.remotePlayers.delete(playerId);
-    }
-  }
-  
-  private onVictory(): void {
-    // Show victory screen
-    window.dispatchEvent(new CustomEvent('playerVictory'));
-  }
-  
-  private onHostDisconnected(): void {
-    // Show host disconnected message
-    window.dispatchEvent(new CustomEvent('hostDisconnected'));
-  }
-  
-  private onNetworkError(message: string): void {
-    // Show error message
-    window.dispatchEvent(new CustomEvent('networkError', { detail: { message } }));
   }
 }

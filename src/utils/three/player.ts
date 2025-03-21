@@ -1,361 +1,305 @@
-import {
+
+import { 
+  Group, 
+  Vector3, 
+  Object3D, 
   Camera,
-  Vector3,
-  Raycaster,
-  Object3D,
-  Scene,
-  ArrowHelper,
   Quaternion,
-  BoxGeometry,
-  MeshBasicMaterial,
+  Raycaster,
+  Scene,
   Mesh,
-  MeshPhongMaterial,
-  AdditiveBlending,
-  Group,
+  MeshBasicMaterial,
+  SphereGeometry,
+  BoxGeometry
 } from 'three';
 import { Lightsaber } from './lightsaber';
 import gameAudio from './audio';
 import { createHitEffect } from './effects';
 
-export interface PlayerState {
-  health: number;
-  maxHealth: number;
-  blocking: boolean;
-  attacking: boolean;
-  lastAttackTime: number;
-  staggered: boolean;
+enum PlayerState {
+  IDLE = 'idle',
+  MOVING = 'moving',
+  ATTACKING = 'attacking',
+  BLOCKING = 'blocking',
+  STAGGERED = 'staggered',
+  DEAD = 'dead'
 }
 
-export class Player {
+export class Player extends Group {
   private camera: Camera;
-  private scene: Scene;
   private lightsaber: Lightsaber;
-  private velocity: Vector3 = new Vector3();
-  private moveForward: boolean = false;
-  private moveBackward: boolean = false;
-  private moveLeft: boolean = false;
-  private moveRight: boolean = false;
-  private canJump: boolean = false;
-  private raycaster: Raycaster = new Raycaster();
-  private speed: number = 5.0;
-  private jumpForce: number = 10.0;
-  private gravity: number = 30.0;
-  private prevTime: number = performance.now();
-  private state: PlayerState = {
-    health: 100,
-    maxHealth: 100,
-    blocking: false,
-    attacking: false,
-    lastAttackTime: 0,
-    staggered: false,
-  };
-  
-  // Collision
-  private collider: Object3D;
-  private boundingBox: Mesh;
-  private cameraHeight: number = 1.7;
+  private scene: Scene;
+  private moveSpeed: number = 5;
+  private health: number = 100;
+  private maxHealth: number = 100;
+  private isMovingForward: boolean = false;
+  private isMovingBackward: boolean = false;
+  private isMovingLeft: boolean = false;
+  private isMovingRight: boolean = false;
+  private isAttackPressed: boolean = false;
+  private isBlockPressed: boolean = false;
+  private state: PlayerState = PlayerState.IDLE;
   private attackCooldown: number = 0.5; // seconds
-  private blockingEfficiency: number = 0.8; // percentage of damage reduced when blocking
-  
-  // Saber animation
-  private saberGroup: Group;
-  private targetSaberPosition: Vector3 = new Vector3();
-  private targetSaberRotation: Quaternion = new Quaternion();
-  private defaultSaberPosition: Vector3 = new Vector3(0.4, -0.3, -0.5);
-  private defaultSaberRotation: Quaternion = new Quaternion().setFromAxisAngle(
-    new Vector3(0, 1, 0),
-    Math.PI / 2
-  );
+  private lastAttackTime: number = 0;
+  private debugMode: boolean = false;
   
   constructor(camera: Camera, scene: Scene) {
+    super();
+    
     this.camera = camera;
     this.scene = scene;
     
-    // Setup lightsaber
-    this.lightsaber = new Lightsaber({
-      color: '#0088ff',
-      bladeLength: 1.0,
-    });
+    // Create debug visual for player position
+    if (this.debugMode) {
+      const playerMarker = new Mesh(
+        new SphereGeometry(0.2, 8, 8),
+        new MeshBasicMaterial({ color: 0x00ff00 })
+      );
+      playerMarker.position.y = 1;
+      this.add(playerMarker);
+    }
     
-    // Create a group for the saber to control its position/rotation
-    this.saberGroup = new Group();
-    this.saberGroup.add(this.lightsaber);
-    this.saberGroup.position.copy(this.defaultSaberPosition);
-    this.saberGroup.quaternion.copy(this.defaultSaberRotation);
-    this.camera.add(this.saberGroup);
+    // Create lightsaber
+    this.lightsaber = new Lightsaber('blue');
+    this.lightsaber.position.set(0.4, -0.3, -0.5); // Position relative to camera
+    this.camera.add(this.lightsaber);
     
-    // Activate the lightsaber
-    this.lightsaber.activate();
-    
-    // Create player collider (invisible)
-    const colliderGeometry = new BoxGeometry(0.6, 2, 0.6);
-    const colliderMaterial = new MeshBasicMaterial({ visible: false });
-    this.collider = new Mesh(colliderGeometry, colliderMaterial);
-    this.collider.position.copy(this.camera.position);
-    this.collider.position.y -= this.cameraHeight / 2;
-    this.scene.add(this.collider);
-    
-    // Debugging bounding box (invisible in final version)
-    const boundingGeometry = new BoxGeometry(0.6, 2, 0.6);
-    const boundingMaterial = new MeshPhongMaterial({
-      color: 0x00ff00,
-      transparent: true,
-      opacity: 0.0, // Set to 0.2 to visualize collider
-      blending: AdditiveBlending
-    });
-    this.boundingBox = new Mesh(boundingGeometry, boundingMaterial);
-    this.boundingBox.position.copy(this.collider.position);
-    this.scene.add(this.boundingBox);
-    
-    // Setup event listeners
+    // Add keyboard event listeners
     this.setupEventListeners();
+    
+    // Activate lightsaber with delay for effect
+    setTimeout(() => {
+      this.lightsaber.activate();
+    }, 1000);
   }
   
   private setupEventListeners(): void {
-    document.addEventListener('keydown', (event) => {
-      switch (event.code) {
-        case 'KeyW':
-          this.moveForward = true;
-          break;
-        case 'KeyS':
-          this.moveBackward = true;
-          break;
-        case 'KeyA':
-          this.moveLeft = true;
-          break;
-        case 'KeyD':
-          this.moveRight = true;
-          break;
-        case 'Space':
-          if (this.canJump) {
-            this.velocity.y = this.jumpForce;
-            this.canJump = false;
-          }
-          break;
-      }
-    });
-    
-    document.addEventListener('keyup', (event) => {
-      switch (event.code) {
-        case 'KeyW':
-          this.moveForward = false;
-          break;
-        case 'KeyS':
-          this.moveBackward = false;
-          break;
-        case 'KeyA':
-          this.moveLeft = false;
-          break;
-        case 'KeyD':
-          this.moveRight = false;
-          break;
-      }
-    });
-    
-    document.addEventListener('mousedown', (event) => {
-      event.preventDefault();
-      
-      // Left click - Attack
-      if (event.button === 0) {
-        this.attack();
-      }
-      
-      // Right click - Block
-      if (event.button === 2) {
-        this.block(true);
-      }
-    });
-    
-    document.addEventListener('mouseup', (event) => {
-      event.preventDefault();
-      
-      // Right click release - Stop blocking
-      if (event.button === 2) {
-        this.block(false);
-      }
-    });
-    
-    // Prevent right-click context menu
-    document.addEventListener('contextmenu', (event) => {
-      event.preventDefault();
-    });
+    document.addEventListener('keydown', this.handleKeyDown.bind(this));
+    document.addEventListener('keyup', this.handleKeyUp.bind(this));
+    document.addEventListener('mousedown', this.handleMouseDown.bind(this));
+    document.addEventListener('mouseup', this.handleMouseUp.bind(this));
+  }
+  
+  private handleKeyDown(event: KeyboardEvent): void {
+    switch (event.code) {
+      case 'KeyW':
+        this.isMovingForward = true;
+        break;
+      case 'KeyS':
+        this.isMovingBackward = true;
+        break;
+      case 'KeyA':
+        this.isMovingLeft = true;
+        break;
+      case 'KeyD':
+        this.isMovingRight = true;
+        break;
+    }
+  }
+  
+  private handleKeyUp(event: KeyboardEvent): void {
+    switch (event.code) {
+      case 'KeyW':
+        this.isMovingForward = false;
+        break;
+      case 'KeyS':
+        this.isMovingBackward = false;
+        break;
+      case 'KeyA':
+        this.isMovingLeft = false;
+        break;
+      case 'KeyD':
+        this.isMovingRight = false;
+        break;
+    }
+  }
+  
+  private handleMouseDown(event: MouseEvent): void {
+    if (event.button === 0) { // Left mouse button
+      this.isAttackPressed = true;
+      this.attack();
+    } else if (event.button === 2) { // Right mouse button
+      this.isBlockPressed = true;
+      this.block();
+    }
+  }
+  
+  private handleMouseUp(event: MouseEvent): void {
+    if (event.button === 0) { // Left mouse button
+      this.isAttackPressed = false;
+    } else if (event.button === 2) { // Right mouse button
+      this.isBlockPressed = false;
+    }
   }
   
   update(deltaTime: number): void {
-    const time = performance.now();
+    if (this.state === PlayerState.DEAD) return;
     
     // Handle movement
-    const delta = (time - this.prevTime) / 1000;
-    this.prevTime = time;
+    this.handleMovement(deltaTime);
     
-    // Apply gravity
-    this.velocity.y -= this.gravity * delta;
+    // Update position
+    this.position.copy(this.camera.position);
+  }
+  
+  private handleMovement(deltaTime: number): void {
+    if (this.state === PlayerState.STAGGERED) return;
     
-    // Move direction based on camera orientation
-    const moveDirection = new Vector3();
-    
-    if (this.moveForward) {
-      moveDirection.z -= 1;
-    }
-    if (this.moveBackward) {
-      moveDirection.z += 1;
-    }
-    if (this.moveLeft) {
-      moveDirection.x -= 1;
-    }
-    if (this.moveRight) {
-      moveDirection.x += 1;
-    }
-    
-    // Normalize movement direction
-    if (moveDirection.length() > 0) {
-      moveDirection.normalize();
-    }
-    
-    // Convert movement from camera space to world space
+    const direction = new Vector3();
     const cameraDirection = new Vector3();
+    
+    // Get camera direction
     this.camera.getWorldDirection(cameraDirection);
-    cameraDirection.y = 0;
+    cameraDirection.y = 0; // Keep movement on horizontal plane
     cameraDirection.normalize();
     
-    const cameraRight = new Vector3(1, 0, 0);
-    cameraRight.applyQuaternion(this.camera.quaternion);
-    cameraRight.y = 0;
-    cameraRight.normalize();
+    // Calculate right vector
+    const right = new Vector3();
+    right.crossVectors(new Vector3(0, 1, 0), cameraDirection).normalize();
     
-    const worldMoveDirection = new Vector3();
-    worldMoveDirection.addScaledVector(cameraDirection, -moveDirection.z);
-    worldMoveDirection.addScaledVector(cameraRight, moveDirection.x);
-    
-    // Apply movement to velocity
-    this.velocity.x = worldMoveDirection.x * this.speed;
-    this.velocity.z = worldMoveDirection.z * this.speed;
-    
-    // Move player collider
-    this.collider.position.x += this.velocity.x * delta;
-    this.collider.position.y += this.velocity.y * delta;
-    this.collider.position.z += this.velocity.z * delta;
-    
-    // Ground collision (simple)
-    if (this.collider.position.y < 0) {
-      this.collider.position.y = 0;
-      this.velocity.y = 0;
-      this.canJump = true;
+    // Apply movement inputs
+    if (this.isMovingForward) {
+      direction.add(cameraDirection);
+    }
+    if (this.isMovingBackward) {
+      direction.sub(cameraDirection);
+    }
+    if (this.isMovingRight) {
+      direction.add(right);
+    }
+    if (this.isMovingLeft) {
+      direction.sub(right);
     }
     
-    // Update camera position based on collider
-    this.camera.position.copy(this.collider.position);
-    this.camera.position.y += this.cameraHeight / 2;
+    // Normalize and apply movement
+    if (direction.lengthSq() > 0) {
+      direction.normalize();
+      
+      // Move the camera
+      const moveAmount = this.moveSpeed * deltaTime;
+      this.camera.position.add(direction.multiplyScalar(moveAmount));
+      
+      // Limit the camera Y position to prevent flying/falling
+      this.camera.position.y = 1.7; // Eye level height
+      
+      this.state = PlayerState.MOVING;
+    } else if (this.state !== PlayerState.ATTACKING && this.state !== PlayerState.BLOCKING) {
+      this.state = PlayerState.IDLE;
+    }
+  }
+  
+  private attack(): void {
+    if (this.state === PlayerState.DEAD || this.state === PlayerState.STAGGERED) return;
     
-    // Update debug bounding box
-    this.boundingBox.position.copy(this.collider.position);
+    const currentTime = performance.now() / 1000;
+    if (currentTime - this.lastAttackTime < this.attackCooldown) return;
     
-    // Smoothly interpolate lightsaber position and rotation for animations
-    if (this.state.attacking) {
-      // Check if attack animation should end
-      const attackDuration = 0.3; // seconds
-      if (time - this.state.lastAttackTime > attackDuration * 1000) {
-        this.state.attacking = false;
-        this.targetSaberPosition.copy(this.defaultSaberPosition);
-        this.targetSaberRotation.copy(this.defaultSaberRotation);
+    this.lastAttackTime = currentTime;
+    this.state = PlayerState.ATTACKING;
+    
+    // Swing lightsaber
+    this.lightsaber.swing();
+    
+    // Reset state after attack
+    setTimeout(() => {
+      if (this.state === PlayerState.ATTACKING) {
+        this.state = PlayerState.IDLE;
       }
-    } else if (this.state.blocking) {
-      // Update saber position for blocking stance
-      this.targetSaberPosition.set(0.2, 0, -0.5);
-      this.targetSaberRotation.setFromAxisAngle(
-        new Vector3(0, 0, 1),
-        Math.PI / 4
-      );
+    }, 500);
+  }
+  
+  private block(): void {
+    if (this.state === PlayerState.DEAD || this.state === PlayerState.STAGGERED) return;
+    
+    this.state = PlayerState.BLOCKING;
+    
+    // Block with lightsaber
+    this.lightsaber.block();
+    
+    // Reset state when block button released
+    setTimeout(() => {
+      if (this.state === PlayerState.BLOCKING && !this.isBlockPressed) {
+        this.state = PlayerState.IDLE;
+      }
+    }, 100);
+  }
+  
+  takeDamage(amount: number): void {
+    if (this.state === PlayerState.DEAD) return;
+    
+    // Reduce damage if blocking
+    let actualDamage = amount;
+    if (this.state === PlayerState.BLOCKING) {
+      actualDamage *= 0.2; // 80% damage reduction when blocking
+    }
+    
+    // Apply damage
+    this.health -= actualDamage;
+    
+    // Clamp health to 0
+    if (this.health < 0) this.health = 0;
+    
+    // Check for death
+    if (this.health <= 0) {
+      this.state = PlayerState.DEAD;
     } else {
-      // Return to default position
-      this.targetSaberPosition.copy(this.defaultSaberPosition);
-      this.targetSaberRotation.copy(this.defaultSaberRotation);
-    }
-    
-    // Smoothly interpolate position and rotation
-    this.saberGroup.position.lerp(this.targetSaberPosition, 10 * delta);
-    this.saberGroup.quaternion.slerp(this.targetSaberRotation, 10 * delta);
-    
-    // Update lightsaber
-    this.lightsaber.update(delta);
-    
-    // Update staggered state
-    if (this.state.staggered && time - this.state.lastAttackTime > 1000) {
-      this.state.staggered = false;
-    }
-  }
-  
-  attack(): void {
-    const time = performance.now();
-    
-    // Check attack cooldown
-    if (time - this.state.lastAttackTime < this.attackCooldown * 1000) {
-      return;
-    }
-    
-    // Set attacking state
-    this.state.attacking = true;
-    this.state.lastAttackTime = time;
-    
-    // Generate swing sound
-    gameAudio.playSound('lightsaberSwing', { volume: 0.7 });
-    
-    // Set target position and rotation for attack swing
-    this.targetSaberPosition.set(0.8, 0.3, -0.5);
-    this.targetSaberRotation.setFromAxisAngle(
-      new Vector3(0, 0, 1),
-      -Math.PI / 3
-    );
-  }
-  
-  block(isBlocking: boolean): void {
-    this.state.blocking = isBlocking;
-    
-    if (isBlocking) {
-      gameAudio.playSound('lightsaberMove', { volume: 0.4 });
-    }
-  }
-  
-  takeDamage(amount: number, source?: Vector3): number {
-    const actualDamage = this.state.blocking
-      ? amount * (1 - this.blockingEfficiency)
-      : amount;
-    
-    this.state.health -= actualDamage;
-    
-    if (this.state.health < 0) {
-      this.state.health = 0;
-    }
-    
-    // Visual feedback
-    if (actualDamage > 0) {
-      // Play hit sound
-      if (this.state.blocking) {
-        gameAudio.playSound('lightsaberClash', { volume: 0.6 });
-        
-        // Create effect if source position is provided
-        if (source) {
-          createHitEffect(this.scene, source, '#ffaa00');
+      // Stagger briefly
+      this.state = PlayerState.STAGGERED;
+      
+      // Show damage effect
+      this.createDamageEffect();
+      
+      // Reset state after stagger
+      setTimeout(() => {
+        if (this.state === PlayerState.STAGGERED) {
+          this.state = PlayerState.IDLE;
         }
-      } else {
-        gameAudio.playSound('playerHit', { volume: 0.6 });
-        this.state.staggered = true;
-      }
+      }, 500);
     }
-    
-    return actualDamage;
+  }
+  
+  private createDamageEffect(): void {
+    try {
+      createHitEffect(this.position, this.scene);
+      
+      // Play hit sound
+      gameAudio.playSound('player_hit', { volume: 0.5 });
+    } catch (error) {
+      console.warn("Failed to create damage effect:", error);
+    }
+  }
+  
+  // Getters
+  isAttacking(): boolean {
+    return this.state === PlayerState.ATTACKING;
+  }
+  
+  isBlocking(): boolean {
+    return this.state === PlayerState.BLOCKING;
+  }
+  
+  isAlive(): boolean {
+    return this.state !== PlayerState.DEAD;
   }
   
   getHealth(): number {
-    return this.state.health;
+    return this.health;
   }
   
   getMaxHealth(): number {
-    return this.state.maxHealth;
+    return this.maxHealth;
+  }
+  
+  getLightsaberPosition(): Vector3 {
+    return this.lightsaber.getBladeTopPosition();
+  }
+  
+  getLightsaberRotation(): Quaternion {
+    return this.lightsaber.quaternion;
   }
   
   getPosition(): Vector3 {
-    return this.camera.position.clone();
+    return this.position;
   }
   
   getDirection(): Vector3 {
@@ -364,37 +308,7 @@ export class Player {
     return direction;
   }
   
-  getSaberPosition(): Vector3 {
-    return this.lightsaber.getBladeTopPosition();
-  }
-  
-  getSaberTipPosition(): Vector3 {
-    return this.lightsaber.getBladeTopPosition();
-  }
-  
-  isBlocking(): boolean {
-    return this.state.blocking;
-  }
-  
-  isAttacking(): boolean {
-    return this.state.attacking;
-  }
-  
-  isAlive(): boolean {
-    return this.state.health > 0;
-  }
-  
-  getLightsaberPosition(): Vector3 {
-    return this.lightsaber.position.clone();
-  }
-  
-  getLightsaberRotation(): Quaternion {
-    return this.lightsaber.quaternion.clone();
-  }
-  
-  takeDamage(newHealth: number): void {
-    this.state.health = newHealth;
-    // Visual feedback for damage
-    this.showDamageEffect();
+  getQuaternion(): Quaternion {
+    return this.camera.quaternion;
   }
 }
