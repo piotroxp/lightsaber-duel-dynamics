@@ -22,6 +22,8 @@ import {
   BoxGeometry,
   MeshBasicMaterial,
   FogExp2,
+  AxesHelper,
+  GridHelper,
 } from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { Player } from './player';
@@ -73,13 +75,7 @@ export class GameScene {
     this.container.appendChild(this.renderer.domElement);
     
     // Create camera third (now renderer exists)
-    this.camera = new PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    this.camera.position.set(0, 1.7, 5);
-    this.camera.lookAt(0, 1.7, 0);
-    
-    // Initialize controls
-    this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
-    this.scene.add(this.controls.getObject());
+    this.setupCamera();
     
     // Create other components
     this.player = new Player(this.camera, this.scene);
@@ -204,37 +200,48 @@ export class GameScene {
     }
   }
   
+  private setupCamera(): void {
+    // Create and position the camera
+    this.camera = new PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    
+    // Position the camera higher and further back to see the scene clearly
+    this.camera.position.set(0, 5, 8); // Higher and further back
+    this.camera.lookAt(0, 0, 0); // Look at the center
+    
+    // Create controls
+    this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
+    
+    // Add camera to scene for reference
+    this.scene.add(this.camera);
+    
+    console.log("Camera positioned at:", this.camera.position);
+  }
+  
   private setupLighting(): void {
-    // Ambient light
-    const ambientLight = new AmbientLight(0x404040, 0.5);
+    // Create very bright ambient light so everything is visible
+    const ambientLight = new AmbientLight(0xffffff, 1.0); // Increase intensity
     this.scene.add(ambientLight);
     
-    // Hemisphere light
-    const hemisphereLight = new HemisphereLight(0x606060, 0x404040, 0.6);
+    // Add hemisphere light for better ambient lighting
+    const hemisphereLight = new HemisphereLight(0xffffff, 0x444444, 1.0);
     this.scene.add(hemisphereLight);
     
-    // Directional light (sun)
-    const directionalLight = new DirectionalLight(0xffffff, 1);
-    directionalLight.position.set(10, 10, 10);
+    // Create directional light (like the sun)
+    const directionalLight = new DirectionalLight(0xffffff, 2.0); // Double intensity
+    directionalLight.position.set(5, 10, 5);
     directionalLight.castShadow = true;
-    directionalLight.shadow.mapSize.width = 2048;
-    directionalLight.shadow.mapSize.height = 2048;
+    directionalLight.shadow.mapSize.width = 1024;
+    directionalLight.shadow.mapSize.height = 1024;
     directionalLight.shadow.camera.near = 0.5;
     directionalLight.shadow.camera.far = 50;
-    directionalLight.shadow.camera.left = -20;
-    directionalLight.shadow.camera.right = 20;
-    directionalLight.shadow.camera.top = 20;
-    directionalLight.shadow.camera.bottom = -20;
     this.scene.add(directionalLight);
     
-    // Add some point lights for atmosphere
-    const pointLight1 = new PointLight(0x3366ff, 1, 10);
-    pointLight1.position.set(5, 2, 5);
+    // Add point lights around the scene for extra visibility
+    const pointLight1 = new PointLight(0xffffff, 2.0, 20);
+    pointLight1.position.set(0, 5, 0);
     this.scene.add(pointLight1);
     
-    const pointLight2 = new PointLight(0xff3333, 1, 10);
-    pointLight2.position.set(-5, 2, -5);
-    this.scene.add(pointLight2);
+    console.log("Enhanced lighting setup complete");
   }
   
   private createEnvironment(): void {
@@ -406,24 +413,54 @@ export class GameScene {
     return this.combatSystem;
   }
   
-  private addDebugElements(): void {
+  private addDebugElements(enhanced = false): void {
+    // Remove existing debug elements if any
+    this.scene.children = this.scene.children.filter(child => 
+      !child.name?.includes('debug'));
+    
     // Add a bright colored box to the scene center
     const debugBox = new Mesh(
-      new BoxGeometry(1, 1, 1),
+      new BoxGeometry(enhanced ? 2 : 1, enhanced ? 2 : 1, enhanced ? 2 : 1),
       new MeshBasicMaterial({ color: 0xff00ff }) // Bright pink
     );
-    debugBox.position.set(0, 1, 0);
+    debugBox.position.set(0, enhanced ? 3 : 1, 0);
+    debugBox.name = 'debug-box';
     this.scene.add(debugBox);
     
     // Add a ground plane that's clearly visible
     const debugGround = new Mesh(
-      new PlaneGeometry(20, 20),
-      new MeshBasicMaterial({ color: 0x00ff00, wireframe: true }) // Green wireframe
+      new PlaneGeometry(40, 40),
+      new MeshBasicMaterial({ 
+        color: 0x00ff00, 
+        wireframe: false, // Solid is more visible
+        opacity: 0.5,
+        transparent: true
+      })
     );
     debugGround.rotation.x = -Math.PI / 2;
     debugGround.position.y = 0;
+    debugGround.name = 'debug-ground';
     this.scene.add(debugGround);
     
-    console.log("Debug elements added to scene");
+    console.log("Enhanced debug elements added to scene");
+  }
+  
+  public enableDebugView(): void {
+    // Reset camera position to see everything
+    this.camera.position.set(0, 10, 10);
+    this.camera.lookAt(0, 0, 0);
+    
+    // Add axis helpers to show X, Y, Z directions
+    const axisHelper = new AxesHelper(5);
+    this.scene.add(axisHelper);
+    
+    // Add a grid helper
+    const gridHelper = new GridHelper(20, 20);
+    this.scene.add(gridHelper);
+    
+    // Make debug elements larger and more visible
+    this.addDebugElements(true);
+    
+    console.log("Debug view enabled");
   }
 }

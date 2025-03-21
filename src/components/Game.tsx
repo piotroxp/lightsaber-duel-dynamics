@@ -66,6 +66,14 @@ const Game: React.FC = () => {
   useEffect(() => {
     initializeGame();
     
+    // Enable debug view after a short delay
+    setTimeout(() => {
+      if (gameSceneRef.current) {
+        gameSceneRef.current.enableDebugView();
+        console.log("Debug view enabled");
+      }
+    }, 2000);
+    
     return () => {
       if (gameSceneRef.current) {
         gameSceneRef.current.cleanup();
