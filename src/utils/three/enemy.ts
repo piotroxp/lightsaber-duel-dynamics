@@ -94,216 +94,85 @@ export class Enemy extends Group {
   }
   
   update(deltaTime: number, playerPosition: Vector3, playerDirection: Vector3): void {
+    if (!this.isAlive()) return;
+    
+    // CRITICAL FIX: Ensure animation and state updates properly
+    this.updateAnimation(deltaTime);
+    
+    // CRITICAL FIX: Force enemy to always run AI update
+    this.updateAI(deltaTime, playerPosition, playerDirection);
+    
     // Update lightsaber
-    this.lightsaber.update(deltaTime);
-    
-    // Update cooldowns
-    if (this.attackCooldown > 0) {
-      this.attackCooldown -= deltaTime;
+    if (this.lightsaber) {
+      this.lightsaber.update(deltaTime);
     }
+  }
+  
+  private updateAI(deltaTime: number, playerPosition: Vector3, playerDirection: Vector3): void {
+    // Skip if dead
+    if (this.state === EnemyState.DEAD) return;
     
-    if (this.blockCooldown > 0) {
-      this.blockCooldown -= deltaTime;
-    }
+    // Calculate distance to player
+    const distanceToPlayer = this.position.distanceTo(playerPosition);
     
-    if (this.staggerTime > 0) {
-      this.staggerTime -= deltaTime;
-      if (this.staggerTime <= 0) {
+    // FIXED: Always face the player regardless of distance
+    this.lookAt(playerPosition.x, this.position.y, playerPosition.z);
+    
+    // Check if we're in active range
+    if (distanceToPlayer <= this.aggroRange) {
+      // FIXED: Move toward player when not in attack range
+      if (distanceToPlayer > this.attackRange) {
+        // Move toward player
         this.state = EnemyState.PURSUING;
-      }
-    }
-    
-    // If dead, don't do anything else
-    if (this.state === EnemyState.DEAD) {
-      return;
-    }
-    
-    // Add null checks to prevent errors with undefined vectors
-    if (playerPosition && playerDirection) {
-      // Save the target player position for pathfinding
-      this.targetPosition.copy(playerPosition);
-      this.targetDirection.copy(playerDirection);
-      
-      // Update state based on distance to player
-      const distanceToPlayer = this.position.distanceTo(playerPosition);
-      
-      if (this.staggerTime > 0) {
-        this.state = EnemyState.STAGGERED;
-      } else if (distanceToPlayer <= this.attackRange) {
-        // Within attack range
-        const shouldBlock = Math.random() < 0.3 && this.blockCooldown <= 0;
+        const moveSpeed = this.speed * deltaTime;
+        const moveDirection = new Vector3()
+          .subVectors(playerPosition, this.position)
+          .normalize();
+        moveDirection.y = 0; // Keep on ground plane
         
-        if (shouldBlock) {
-          this.state = EnemyState.BLOCKING;
-          this.blocking = true;
-          this.blockCooldown = 1.0; // Cooldown before blocking again
-        } else if (this.attackCooldown <= 0) {
-          this.state = EnemyState.ATTACKING;
+        // CRITICAL FIX: Ensure movement is applied
+        this.position.add(moveDirection.multiplyScalar(moveSpeed));
+      } 
+      // When in attack range, occasionally attack
+      else if (distanceToPlayer <= this.attackRange) {
+        // Get current time for cooldown check
+        const currentTime = performance.now() / 1000;
+        
+        // FIXED: Ensure attack cooldown is checked and is reasonable
+        if (currentTime - this.lastAttackTime > 2.0 && Math.random() > 0.7) {
+          // CRITICAL FIX: Force attack to happen
           this.attack();
+          this.lastAttackTime = currentTime;
         } else {
-          this.state = EnemyState.PURSUING;
+          // Strafe around player when not attacking
+          this.strafeAroundTarget(deltaTime, playerPosition);
         }
-      } else if (distanceToPlayer <= this.aggroRange) {
-        // Within aggro range, pursue player
-        this.state = EnemyState.PURSUING;
-        this.blocking = false;
-      } else {
-        // Out of range, go idle
-        this.state = EnemyState.IDLE;
-        this.blocking = false;
       }
     }
-    
-    // Update movement based on state
-    switch (this.state) {
-      case EnemyState.PURSUING:
-        this.moveTowardsTarget(deltaTime);
-        break;
-        
-      case EnemyState.IDLE:
-        this.wander(deltaTime);
-        break;
-        
-      case EnemyState.ATTACKING:
-        // Don't move during attack
-        this.rotateTowardTarget(deltaTime);
-        break;
-        
-      case EnemyState.BLOCKING:
-        // Move slightly when blocking to avoid easy hits
-        this.strafeAroundTarget(deltaTime);
-        break;
-        
-      case EnemyState.STAGGERED:
-        // Don't move while staggered
-        break;
-        
-      default:
-        break;
-    }
-    
-    // Update animation
-    this.animate(deltaTime);
-  }
-  
-  private moveTowardsTarget(deltaTime: number): void {
-    // Calculate direction vector
-    const direction = new Vector3()
-      .subVectors(this.targetPosition, this.position)
-      .normalize();
-    
-    // Only move in the xz plane
-    direction.y = 0;
-    
-    // Check if we're too close to the player
-    const distanceToPlayer = this.position.distanceTo(this.targetPosition);
-    if (distanceToPlayer < this.tooCloseRange) {
-      // Move away slightly
-      direction.negate();
-    }
-    
-    // Move the enemy
-    const moveAmount = this.speed * deltaTime;
-    this.position.add(direction.multiplyScalar(moveAmount));
-    
-    // Rotate to face the target
-    this.rotateTowardTarget(deltaTime);
-  }
-  
-  private rotateTowardTarget(deltaTime: number): void {
-    // Get direction to player
-    const direction = new Vector3()
-      .subVectors(this.targetPosition, this.position)
-      .normalize();
-    
-    // Only rotate in the xz plane
-    direction.y = 0;
-    
-    // Calculate target rotation
-    const targetQuaternion = new Quaternion();
-    const euler = new Euler(0, Math.atan2(direction.x, direction.z), 0);
-    targetQuaternion.setFromEuler(euler);
-    
-    // Smoothly rotate towards the target
-    this.quaternion.slerp(targetQuaternion, 5 * deltaTime);
-  }
-  
-  private strafeAroundTarget(deltaTime: number): void {
-    // Calculate position relative to the player
-    const toPlayer = new Vector3().subVectors(this.targetPosition, this.position);
-    
-    // Create a perpendicular direction in the xz plane (for strafing)
-    const strafeDir = new Vector3(-toPlayer.z, 0, toPlayer.x).normalize();
-    
-    // Alternate strafing direction based on time
-    const time = performance.now() * 0.001;
-    if (Math.sin(time) > 0) {
-      strafeDir.negate();
-    }
-    
-    // Move the enemy
-    const moveAmount = this.speed * 0.7 * deltaTime; // Move slower while strafing
-    this.position.add(strafeDir.multiplyScalar(moveAmount));
-    
-    // Keep facing the player
-    this.rotateTowardTarget(deltaTime);
-  }
-  
-  private wander(deltaTime: number): void {
-    // Update wander timer
-    this.wanderTimer -= deltaTime;
-    
-    // Pick a new random destination if needed
-    if (this.wanderTimer <= 0) {
-      this.wanderTimer = 2 + Math.random() * 3; // 2-5 seconds
-      
-      // Random point within 5 units of current position
-      const randomOffset = new Vector3(
-        (Math.random() - 0.5) * 10,
-        0,
-        (Math.random() - 0.5) * 10
-      );
-      
-      this.wanderTarget.copy(this.position).add(randomOffset);
-    }
-    
-    // Move towards the wander target
-    const direction = new Vector3()
-      .subVectors(this.wanderTarget, this.position)
-      .normalize();
-    
-    // Only move in the xz plane
-    direction.y = 0;
-    
-    // Move the enemy at half speed
-    const moveAmount = this.speed * 0.5 * deltaTime;
-    this.position.add(direction.multiplyScalar(moveAmount));
-    
-    // Rotate towards the wander target
-    const targetQuaternion = new Quaternion();
-    const euler = new Euler(0, Math.atan2(direction.x, direction.z), 0);
-    targetQuaternion.setFromEuler(euler);
-    
-    // Smoothly rotate towards the target
-    this.quaternion.slerp(targetQuaternion, 3 * deltaTime);
   }
   
   attack(): void {
-    if (this.attackCooldown <= 0 && this.state !== EnemyState.DEAD) {
-      this.attacking = true;
-      this.attackCooldown = 1.5; // Cooldown before next attack
-      
-      // Simple attack animation tracked through time
-      const attackDuration = 0.5; // seconds
-      
-      // Play attack sound
-      gameAudio.playSound('lightsaberHum', { volume: 0.4 });
-      
-      // Schedule the end of attack
-      setTimeout(() => {
-        this.attacking = false;
-      }, attackDuration * 1000);
+    if (this.state === EnemyState.ATTACKING || 
+        this.state === EnemyState.DEAD || 
+        this.state === EnemyState.STAGGERED) return;
+    
+    const currentTime = performance.now() / 1000;
+    if (currentTime - this.lastAttackTime < this.attackCooldown) return;
+    
+    this.lastAttackTime = currentTime;
+    this.state = EnemyState.ATTACKING;
+    
+    // Swing lightsaber
+    if (this.lightsaber) {
+      this.lightsaber.swing();
     }
+    
+    // Reset state after attack animation
+    setTimeout(() => {
+      if (this.state === EnemyState.ATTACKING) {
+        this.state = EnemyState.IDLE;
+      }
+    }, 300);
   }
   
   takeDamage(amount: number, hitPosition: Vector3): number {
@@ -521,5 +390,59 @@ export class Enemy extends Group {
     );
     limb.castShadow = true;
     return limb;
+  }
+  
+  // Add strafing method back for more dynamic movement
+  private strafeAroundTarget(deltaTime: number, targetPosition: Vector3): void {
+    const toTarget = new Vector3().subVectors(targetPosition, this.position);
+    toTarget.y = 0; // Keep on xz plane
+    
+    // Create perpendicular direction to strafe
+    const strafeDir = new Vector3(-toTarget.z, 0, toTarget.x).normalize();
+    
+    // Alternate direction based on time
+    const time = performance.now() * 0.001;
+    if (Math.sin(time * 0.5) > 0) {
+      strafeDir.negate();
+    }
+    
+    // Move slower while strafing
+    const strafeSpeed = this.speed * 0.5 * deltaTime;
+    this.position.add(strafeDir.multiplyScalar(strafeSpeed));
+  }
+  
+  // Add wandering method for idle behavior
+  private wander(deltaTime: number): void {
+    // Check if we need a new wander target
+    if (!this.wanderTarget || Math.random() < 0.01) {
+      // Pick a random point within 5 units
+      const randomAngle = Math.random() * Math.PI * 2;
+      const randomDist = 2 + Math.random() * 3;
+      
+      this.wanderTarget = new Vector3(
+        this.position.x + Math.cos(randomAngle) * randomDist,
+        this.position.y,
+        this.position.z + Math.sin(randomAngle) * randomDist
+      );
+    }
+    
+    // Move toward wander target
+    if (this.wanderTarget) {
+      const toTarget = new Vector3().subVectors(this.wanderTarget, this.position);
+      toTarget.y = 0;
+      
+      if (toTarget.length() > 0.1) {
+        toTarget.normalize();
+        const wanderSpeed = this.speed * 0.3 * deltaTime;
+        this.position.add(toTarget.multiplyScalar(wanderSpeed));
+        
+        // Face wander direction
+        this.lookAt(
+          this.wanderTarget.x,
+          this.position.y,
+          this.wanderTarget.z
+        );
+      }
+    }
   }
 }

@@ -456,28 +456,25 @@ export class Lightsaber extends Group {
       // Apply different swing animations based on movement direction
       switch (movementDirection) {
         case 'right':
-          // When moving right, swing from top-right to bottom-left
           if (progress < 0.7) {
-            // Rotational component - spherical arc
-            this.rotation.x = originalRotation.x + Math.sin(progress * Math.PI) * 0.7;
-            this.rotation.z = originalRotation.z - Math.sin(progress * Math.PI) * 1.0;
-            this.rotation.y = originalRotation.y - Math.sin(progress * Math.PI * 0.5) * 0.2;
+            // Use the same animation curve as left, but with inverted signs
+            this.rotation.x = originalRotation.x - Math.sin(progress * Math.PI) * 0.7; // Inverse of left
+            this.rotation.z = originalRotation.z - Math.sin(progress * Math.PI) * 1.0; // Same as left
+            this.rotation.y = originalRotation.y - Math.sin(progress * Math.PI * 0.5) * 0.3; // Enhanced from left
             
-            // Positional component - thrust forward during swing
-            this.position.z = originalPosition.z - Math.sin(progress * Math.PI) * 0.15;
-            this.position.x = originalPosition.x - Math.sin(progress * Math.PI * 0.5) * 0.05;
+            // Positional component - mirror the left swing but with tweaked parameters
+            this.position.z = originalPosition.z - Math.sin(progress * Math.PI) * 0.35;
+            this.position.x = originalPosition.x - Math.sin(progress * Math.PI * 0.5) * 0.08; // Enhanced from left
           } else {
-            // Return phase
+            // Return phase - mirror the left swing return
             const returnProgress = (progress - 0.7) / 0.3;
             
-            // Smoothly return to original position and rotation
-            this.rotation.x = originalRotation.x + Math.sin((1 - returnProgress) * Math.PI) * 0.3;
+            this.rotation.x = originalRotation.x - Math.sin((1 - returnProgress) * Math.PI) * 0.3;
             this.rotation.z = originalRotation.z - Math.sin((1 - returnProgress) * Math.PI) * 0.4;
-            this.rotation.y = originalRotation.y - Math.sin((1 - returnProgress) * Math.PI * 0.5) * 0.1;
+            this.rotation.y = originalRotation.y - Math.sin((1 - returnProgress) * Math.PI * 0.5) * 0.15;
             
-            // Return position
             this.position.z = originalPosition.z - Math.sin((1 - returnProgress) * Math.PI) * 0.05;
-            this.position.x = originalPosition.x - Math.sin((1 - returnProgress) * Math.PI * 0.5) * 0.02;
+            this.position.x = originalPosition.x - Math.sin((1 - returnProgress) * Math.PI * 0.5) * 0.04;
           }
           break;
           
@@ -489,8 +486,8 @@ export class Lightsaber extends Group {
             this.rotation.z = originalRotation.z + Math.sin(progress * Math.PI) * 1.0;
             this.rotation.y = originalRotation.y + Math.sin(progress * Math.PI * 0.5) * 0.2;
             
-            // Positional component - thrust forward during swing
-            this.position.z = originalPosition.z - Math.sin(progress * Math.PI) * 0.15;
+            // Positional component - MORE FORWARD THRUST during swing
+            this.position.z = originalPosition.z - Math.sin(progress * Math.PI) * 0.35; // Increased from 0.15 to 0.35
             this.position.x = originalPosition.x + Math.sin(progress * Math.PI * 0.5) * 0.05;
           } else {
             // Return phase
@@ -556,20 +553,48 @@ export class Lightsaber extends Group {
     // Play block sound
     gameAudio.playSound('lightsaberMove', { volume: 0.5 });
     
-    // Position lightsaber in defensive position
+    // Store original position and rotation
     const originalRotation = {
       x: this.rotation.x,
       y: this.rotation.y,
       z: this.rotation.z
     };
     
-    // Horizontal blocking position
-    this.rotation.z = originalRotation.z + Math.PI / 2;
+    const originalPosition = {
+      x: this.position.x,
+      y: this.position.y,
+      z: this.position.z
+    };
     
-    // Reset after a short delay
+    // FIXED: Move to raised horizontal blocking position (right to left)
+    this.rotation.x = originalRotation.x - 0.3; // Tilt up slightly
+    this.rotation.z = originalRotation.z + Math.PI / 2; // Turn blade horizontal
+    this.rotation.y = originalRotation.y + 0.2; // Angle across body
+    
+    // Raise position slightly for a higher block
+    this.position.y = originalPosition.y + 0.2;
+    this.position.z = originalPosition.z - 0.1;
+    
+    // Reset position when block ends
     setTimeout(() => {
+      if (!this.isBlocking) return;
+      
       this.rotation.set(originalRotation.x, originalRotation.y, originalRotation.z);
+      this.position.set(originalPosition.x, originalPosition.y, originalPosition.z);
       this.isBlocking = false;
-    }, 200);
+    }, 600);
+  }
+  
+  endBlock(): void {
+    if (!this.isBlocking) return;
+    
+    // Reset rotation and position
+    this.rotation.set(
+      this.initialRotation.x,
+      this.initialRotation.y,
+      this.initialRotation.z
+    );
+    
+    this.isBlocking = false;
   }
 }

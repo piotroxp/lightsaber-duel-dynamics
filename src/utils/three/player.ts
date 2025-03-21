@@ -40,6 +40,7 @@ export class Player extends Group {
   private state: PlayerState = PlayerState.IDLE;
   private attackCooldown: number = 0.5; // seconds
   private lastAttackTime: number = 0;
+  private lastBlockTime: number = 0;
   private debugMode: boolean = false;
   
   constructor(camera: Camera, scene: Scene) {
@@ -66,8 +67,8 @@ export class Player extends Group {
       glowIntensity: 1.2
     });
     
-    // Reposition lightsaber lower in the viewport so entire blade is visible
-    this.lightsaber.position.set(0.1, -0.3, -0.35);
+    // Reposition lightsaber so only top 25% of hilt is visible in normal position
+    this.lightsaber.position.set(0.1, -0.47, -0.35);
     this.camera.add(this.lightsaber);
     
     // Add keyboard event listeners
@@ -87,34 +88,39 @@ export class Player extends Group {
   }
   
   private handleKeyDown(event: KeyboardEvent): void {
-    switch (event.code) {
-      case 'KeyW':
+    // Skip if player is dead
+    if (this.state === PlayerState.DEAD) return;
+    
+    // Map keys to movement flags
+    switch (event.key.toLowerCase()) {
+      case 'w':
         this.isMovingForward = true;
         break;
-      case 'KeyS':
+      case 's':
         this.isMovingBackward = true;
         break;
-      case 'KeyA':
+      case 'a':  // Ensure A maps to moving LEFT
         this.isMovingLeft = true;
         break;
-      case 'KeyD':
+      case 'd':  // Ensure D maps to moving RIGHT
         this.isMovingRight = true;
         break;
     }
   }
   
   private handleKeyUp(event: KeyboardEvent): void {
-    switch (event.code) {
-      case 'KeyW':
+    // Map keys to movement flags
+    switch (event.key.toLowerCase()) {
+      case 'w':
         this.isMovingForward = false;
         break;
-      case 'KeyS':
+      case 's':
         this.isMovingBackward = false;
         break;
-      case 'KeyA':
+      case 'a':  // Ensure A maps to moving LEFT
         this.isMovingLeft = false;
         break;
-      case 'KeyD':
+      case 'd':  // Ensure D maps to moving RIGHT
         this.isMovingRight = false;
         break;
     }
@@ -144,6 +150,11 @@ export class Player extends Group {
     // Handle movement
     this.handleMovement(deltaTime);
     
+    // Check if we should end blocking state when button released
+    if (this.state === PlayerState.BLOCKING && !this.isBlockPressed) {
+      this.state = PlayerState.IDLE;
+    }
+    
     // Update position
     this.position.copy(this.camera.position);
   }
@@ -159,9 +170,9 @@ export class Player extends Group {
     cameraDirection.y = 0; // Keep movement on horizontal plane
     cameraDirection.normalize();
     
-    // Calculate right vector
+    // FIXED: Correctly calculate right vector with proper cross product order
     const right = new Vector3();
-    right.crossVectors(new Vector3(0, 1, 0), cameraDirection).normalize();
+    right.crossVectors(cameraDirection, new Vector3(0, 1, 0)).normalize();
     
     // Apply movement inputs
     if (this.isMovingForward) {
@@ -231,17 +242,17 @@ export class Player extends Group {
   private block(): void {
     if (this.state === PlayerState.DEAD || this.state === PlayerState.STAGGERED) return;
     
+    // Set blocking state
     this.state = PlayerState.BLOCKING;
     
-    // Block with lightsaber using the block method
+    // Block with lightsaber
     this.lightsaber.block();
     
-    // Reset state when block button released
-    setTimeout(() => {
-      if (this.state === PlayerState.BLOCKING && !this.isBlockPressed) {
-        this.state = PlayerState.IDLE;
-      }
-    }, 100);
+    // Play block sound
+    gameAudio.playSound('lightsaberMove', { volume: 0.4 });
+    
+    // Keep track of block time
+    this.lastBlockTime = performance.now() / 1000;
   }
   
   takeDamage(amount: number): void {
