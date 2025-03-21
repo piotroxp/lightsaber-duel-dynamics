@@ -1,4 +1,3 @@
-
 import { Group, Vector3, Mesh, CylinderGeometry, MeshStandardMaterial, MeshBasicMaterial, Color, AdditiveBlending, SpotLight, Object3D } from 'three';
 import { ParticleEmitter } from './effects';
 import gameAudio from './audio';
@@ -10,6 +9,8 @@ export interface LightsaberOptions {
 }
 
 export class Lightsaber extends Group {
+  declare position: Vector3;
+  declare rotateY: (angle: number) => this;
   private bladeColor: string;
   private bladeLength: number;
   private hiltLength: number;

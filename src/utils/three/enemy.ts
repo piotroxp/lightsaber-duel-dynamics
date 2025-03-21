@@ -1,4 +1,4 @@
-import { Group, Scene, Vector3, Mesh, BoxGeometry, MeshStandardMaterial, SphereGeometry, CylinderGeometry, Color, Quaternion, Euler, MathUtils } from 'three';
+import { Group, Scene, Vector3, Mesh, BoxGeometry, MeshStandardMaterial, SphereGeometry, CylinderGeometry, Color, Quaternion, Euler, MathUtils, Object3D } from 'three';
 import { Lightsaber } from './lightsaber';
 import { createSaberClashEffect, createHitEffect } from './effects';
 import gameAudio from './audio';
@@ -21,6 +21,14 @@ export enum EnemyState {
 }
 
 export class Enemy extends Group {
+  // Add explicit declarations to help TypeScript recognize inherited properties
+  declare position: Vector3;
+  declare quaternion: Quaternion;
+  declare parent: Object3D;
+  declare add: (object: Object3D) => this;
+  declare rotateX: (angle: number) => this;
+  declare rotateY: (angle: number) => this;
+
   // Stats
   private health: number;
   private maxHealth: number;
@@ -54,83 +62,32 @@ export class Enemy extends Group {
   private leftLeg: Mesh;
   private rightLeg: Mesh;
   
+  private scene: Scene;
+  
   constructor(scene: Scene, options: EnemyOptions = {}) {
     super();
     
+    this.scene = scene;
+    
     // Set stats with defaults
     this.maxHealth = options.health || 100;
-    this.health = this.maxHealth;
+    this.health = options.health || 100;
     this.speed = options.speed || 2.0;
     this.attackRange = options.attackRange || 2.0;
     this.attackDamage = options.attackDamage || 10;
     
+    // Create enemy body
+    this.createBody();
+    
     // Create lightsaber
     this.lightsaber = new Lightsaber({
       color: options.lightsaberColor || '#ff0000',
-      bladeLength: 1.0
+      bladeLength: 1.2,
+      hiltLength: 0.2
     });
     this.lightsaber.position.set(0.4, 0.9, 0.2);
     this.lightsaber.rotateY(Math.PI * 0.25);
     this.add(this.lightsaber);
-    
-    // Create body parts
-    // Head
-    const headGeometry = new SphereGeometry(0.2, 16, 16);
-    const headMaterial = new MeshStandardMaterial({
-      color: 0x333333,
-      roughness: 0.7
-    });
-    this.head = new Mesh(headGeometry, headMaterial);
-    this.head.position.y = 1.5;
-    this.head.castShadow = true;
-    this.add(this.head);
-    
-    // Body
-    const bodyGeometry = new BoxGeometry(0.5, 0.7, 0.3);
-    const bodyMaterial = new MeshStandardMaterial({
-      color: 0x660000,
-      roughness: 0.5
-    });
-    this.body = new Mesh(bodyGeometry, bodyMaterial);
-    this.body.position.y = 1.0;
-    this.body.castShadow = true;
-    this.add(this.body);
-    
-    // Arms
-    const armGeometry = new CylinderGeometry(0.08, 0.08, 0.5, 8);
-    const armMaterial = new MeshStandardMaterial({
-      color: 0x333333,
-      roughness: 0.7
-    });
-    
-    this.leftArm = new Mesh(armGeometry, armMaterial);
-    this.leftArm.position.set(-0.3, 1.1, 0);
-    this.leftArm.rotation.z = -Math.PI / 4;
-    this.leftArm.castShadow = true;
-    this.add(this.leftArm);
-    
-    this.rightArm = new Mesh(armGeometry, armMaterial);
-    this.rightArm.position.set(0.3, 1.1, 0);
-    this.rightArm.rotation.z = Math.PI / 4;
-    this.rightArm.castShadow = true;
-    this.add(this.rightArm);
-    
-    // Legs
-    const legGeometry = new CylinderGeometry(0.1, 0.1, 0.6, 8);
-    const legMaterial = new MeshStandardMaterial({
-      color: 0x000000,
-      roughness: 0.7
-    });
-    
-    this.leftLeg = new Mesh(legGeometry, legMaterial);
-    this.leftLeg.position.set(-0.15, 0.5, 0);
-    this.leftLeg.castShadow = true;
-    this.add(this.leftLeg);
-    
-    this.rightLeg = new Mesh(legGeometry, legMaterial);
-    this.rightLeg.position.set(0.15, 0.5, 0);
-    this.rightLeg.castShadow = true;
-    this.add(this.rightLeg);
     
     // Activate lightsaber
     this.lightsaber.activate();
@@ -355,11 +312,11 @@ export class Enemy extends Group {
     // If blocking and hit is from the front, reduce damage
     if (this.blocking) {
       // Calculate direction from enemy to hit
-      const toHit = new Vector3().subVectors(hitPosition, this.position).normalize();
+      const toHit = new Vector3().subVectors(hitPosition, (this as any).position).normalize();
       toHit.y = 0; // Only consider xz plane for blocking
       
       // Get enemy forward direction
-      const forward = new Vector3(0, 0, 1).applyQuaternion(this.quaternion);
+      const forward = new Vector3(0, 0, 1).applyQuaternion((this as any).quaternion);
       
       // If hit from the front (dot product > 0), block reduces damage by 75%
       const dot = forward.dot(toHit);
@@ -515,5 +472,51 @@ export class Enemy extends Group {
   
   getPosition(): Vector3 {
     return this.position.clone();
+  }
+  
+  private createBody(): void {
+    // Create head
+    this.head = new Mesh(
+      new SphereGeometry(0.25, 16, 16),
+      new MeshStandardMaterial({ color: 0x333333 })
+    );
+    this.head.position.set(0, 1.7, 0);
+    this.head.castShadow = true;
+    this.add(this.head);
+    
+    // Create body
+    this.body = new Mesh(
+      new BoxGeometry(0.5, 0.8, 0.3),
+      new MeshStandardMaterial({ color: 0x222222 })
+    );
+    this.body.position.set(0, 1.2, 0);
+    this.body.castShadow = true;
+    this.add(this.body);
+    
+    // Create limbs (arms and legs)
+    this.leftArm = this.createLimb(0.15, 0.6, 0.15, 0x222222);
+    this.leftArm.position.set(-0.35, 1.3, 0);
+    this.add(this.leftArm);
+    
+    this.rightArm = this.createLimb(0.15, 0.6, 0.15, 0x222222);
+    this.rightArm.position.set(0.35, 1.3, 0);
+    this.add(this.rightArm);
+    
+    this.leftLeg = this.createLimb(0.15, 0.7, 0.15, 0x222222);
+    this.leftLeg.position.set(-0.2, 0.5, 0);
+    this.add(this.leftLeg);
+    
+    this.rightLeg = this.createLimb(0.15, 0.7, 0.15, 0x222222);
+    this.rightLeg.position.set(0.2, 0.5, 0);
+    this.add(this.rightLeg);
+  }
+  
+  private createLimb(width: number, height: number, depth: number, color: number): Mesh {
+    const limb = new Mesh(
+      new BoxGeometry(width, height, depth),
+      new MeshStandardMaterial({ color })
+    );
+    limb.castShadow = true;
+    return limb;
   }
 }

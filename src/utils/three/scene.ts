@@ -1,4 +1,3 @@
-
 import {
   Scene,
   WebGLRenderer,
@@ -56,38 +55,34 @@ export class GameScene {
     this.onLoadProgress = onLoadProgress;
     this.onLoadComplete = onLoadComplete;
     
-    // Create scene
+    // Create scene first
     this.scene = new Scene();
-    this.scene.fog = new FogExp2(0x000000, 0.03);
     
-    // Create camera
-    this.camera = new PerspectiveCamera(
-      75,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1000
-    );
-    this.camera.position.set(0, 1.7, 5);
-    
-    // Create renderer
-    this.renderer = new WebGLRenderer({ antialias: true });
+    // Create renderer second
+    this.renderer = new WebGLRenderer({
+      antialias: true,
+      alpha: false
+    });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = PCFSoftShadowMap;
     this.renderer.outputColorSpace = SRGBColorSpace;
+    this.renderer.setClearColor(0x222222);
     this.container.appendChild(this.renderer.domElement);
     
-    // Create controls
+    // Create camera third (now renderer exists)
+    this.camera = new PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    this.camera.position.set(0, 1.7, 5);
+    this.camera.lookAt(0, 1.7, 0);
+    
+    // Initialize controls
     this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
+    this.scene.add(this.controls.getObject());
     
-    // Create player
+    // Create other components
     this.player = new Player(this.camera, this.scene);
-    
-    // Create combat system
     this.combatSystem = new CombatSystem(this.scene, this.player);
-    
-    // Create particle system
     this.particleSystem = new ParticleSystem(this.scene);
     
     // Setup event listeners
@@ -100,51 +95,50 @@ export class GameScene {
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
     
+    console.log("Starting initialization");
+    
     try {
-      // Report starting progress
-      this.onLoadProgress(0.1);
-      
-      // Load assets with proper error handling
+      // Load assets
+      this.onLoadProgress(0.2);
       try {
+        console.log("Loading assets...");
         await this.loadAssets();
+        console.log("Assets loaded successfully");
       } catch (error) {
         console.error("Error loading assets:", error);
-        // Continue anyway to allow the game to start
       }
       
-      // Report progress
-      this.onLoadProgress(0.6);
-      
       // Setup lighting
+      this.onLoadProgress(0.6);
+      console.log("Setting up lighting...");
       this.setupLighting();
       
-      // Report progress
-      this.onLoadProgress(0.7);
-      
       // Create environment
+      this.onLoadProgress(0.7);
+      console.log("Creating environment...");
       this.createEnvironment();
       
-      // Report progress
-      this.onLoadProgress(0.8);
+      // Add debug elements
+      this.addDebugElements();
       
       // Create enemies
+      this.onLoadProgress(0.8);
+      console.log("Creating enemies...");
       this.createEnemies();
       
-      // Report progress
-      this.onLoadProgress(0.9);
-      
       // Start animation loop
+      this.onLoadProgress(0.9);
+      console.log("Starting animation loop...");
       this.animate();
       
       this.isInitialized = true;
       
       // Report completion
       this.onLoadProgress(1.0);
+      console.log("Initialization complete");
       this.onLoadComplete();
-      
     } catch (error) {
       console.error("Error during initialization:", error);
-      // Try to complete loading anyway
       this.onLoadProgress(1.0);
       this.onLoadComplete();
     }
@@ -314,30 +308,37 @@ export class GameScene {
   }
   
   private animate(): void {
-    requestAnimationFrame(this.animate.bind(this));
+    const animateLoop = () => {
+      requestAnimationFrame(animateLoop);
+      
+      const deltaTime = this.clock.getDelta();
+      
+      // Update player and enemies
+      if (this.player) {
+        this.player.update(deltaTime);
+      }
+      
+      for (const enemy of this.enemies) {
+        enemy.update(deltaTime, this.player);
+      }
+      
+      // Update combat system
+      this.combatSystem.update();
+      
+      // Update particle systems
+      this.particleSystem.update(deltaTime);
+      
+      // Render the scene
+      this.renderer.render(this.scene, this.camera);
+      
+      // Log occasional frame to verify rendering is happening
+      if (Math.random() < 0.01) {
+        console.log("Frame rendered, camera at:", this.camera.position);
+      }
+    };
     
-    const delta = this.clock.getDelta();
-    
-    // Update player
-    this.player.update(delta);
-    
-    // Update enemies
-    for (const enemy of this.enemies) {
-      enemy.update(
-        delta,
-        this.player.getPosition(),
-        this.player.getDirection()
-      );
-    }
-    
-    // Update combat system
-    this.combatSystem.update();
-    
-    // Update particle systems
-    this.particleSystem.update(delta);
-    
-    // Render scene
-    this.renderer.render(this.scene, this.camera);
+    animateLoop();
+    console.log("Animation loop started");
   }
   
   unlockControls(): void {
@@ -390,5 +391,26 @@ export class GameScene {
   
   getCombatSystem(): CombatSystem {
     return this.combatSystem;
+  }
+  
+  private addDebugElements(): void {
+    // Add a bright colored box to the scene center
+    const debugBox = new Mesh(
+      new BoxGeometry(1, 1, 1),
+      new MeshBasicMaterial({ color: 0xff00ff }) // Bright pink
+    );
+    debugBox.position.set(0, 1, 0);
+    this.scene.add(debugBox);
+    
+    // Add a ground plane that's clearly visible
+    const debugGround = new Mesh(
+      new PlaneGeometry(20, 20),
+      new MeshBasicMaterial({ color: 0x00ff00, wireframe: true }) // Green wireframe
+    );
+    debugGround.rotation.x = -Math.PI / 2;
+    debugGround.position.y = 0;
+    this.scene.add(debugGround);
+    
+    console.log("Debug elements added to scene");
   }
 }
