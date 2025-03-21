@@ -20,21 +20,28 @@ class GameAudio {
   private resumeAudioContext: () => void = () => {};
 
   async initialize(onProgress?: (progress: number) => void): Promise<void> {
+    // If already initialized, just resolve
+    if (this.isInitialized) {
+      console.log("Audio already initialized");
+      return Promise.resolve();
+    }
+
     return new Promise<void>((resolve) => {
       // Set timeout to resolve even if audio loading hangs
       const timeoutId = setTimeout(() => {
         console.warn('Audio initialization timed out - continuing anyway');
+        this.isInitialized = true; // Mark as initialized anyway
         resolve();
       }, 5000);
       
       try {
+        console.log("Starting audio initialization");
         // Create audio listener
         this.listener = new AudioListener();
-        this.isInitialized = true;
 
         // Create audio context
         try {
-          this.audioContext = new AudioContext();
+          this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
           
           // Add event listeners to resume AudioContext on user interaction
           // This is needed because browsers require user interaction to start audio
@@ -43,15 +50,25 @@ class GameAudio {
           console.error('Web Audio API is not supported in this browser', e);
         }
 
-        // Load sounds
-        this.loadSounds(onProgress);
-        
-        // When complete, clear timeout and resolve
-        clearTimeout(timeoutId);
-        resolve();
+        // Immediately mark as initialized to prevent loading issues
+        this.isInitialized = true;
+
+        // Load sounds asynchronously, but don't block game start
+        this.loadSounds(onProgress)
+          .then(() => {
+            console.log("Audio sounds loaded successfully");
+            clearTimeout(timeoutId);
+            resolve();
+          })
+          .catch(err => {
+            console.error("Failed to load audio sounds:", err);
+            clearTimeout(timeoutId);
+            resolve(); // Resolve anyway to avoid blocking the game
+          });
       } catch (error) {
         console.error('Audio initialization failed:', error);
         // Still resolve to prevent game from getting stuck
+        this.isInitialized = true; // Mark as initialized anyway
         clearTimeout(timeoutId);
         resolve();
       }
@@ -97,24 +114,33 @@ class GameAudio {
       { name: 'backgroundMusic', path: '/sounds/background_music.mp3' },
     ];
 
-    // Mock loading for now since we don't have the actual sound files yet
+    // Create dummy sounds for now
     for (let i = 0; i < soundFiles.length; i++) {
       const sound = soundFiles[i];
       
-      // Create empty buffer for now
-      const buffer = this.audioContext?.createBuffer(2, 22050, 44100) || null;
-      
-      this.sounds.set(sound.name, {
-        buffer: buffer as AudioBuffer,
-        isLoaded: true
-      });
+      try {
+        // Create empty buffer for now
+        const buffer = this.audioContext?.createBuffer(2, 22050, 44100) || null;
+        
+        this.sounds.set(sound.name, {
+          buffer: buffer as AudioBuffer,
+          isLoaded: true
+        });
+      } catch (err) {
+        console.error(`Failed to create buffer for sound ${sound.name}:`, err);
+        // Still add an entry so the game doesn't crash when trying to play this sound
+        this.sounds.set(sound.name, {
+          buffer: null as any,
+          isLoaded: false
+        });
+      }
       
       if (onProgress) {
         onProgress((i + 1) / soundFiles.length);
       }
       
-      // Small delay to simulate loading
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Shorter delay to speed up loading
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
 
@@ -133,22 +159,31 @@ class GameAudio {
       return null;
     }
     
-    const audio = new Audio(this.listener);
-    audio.setBuffer(sound.buffer);
-    audio.setLoop(options.loop || false);
-    audio.setVolume(options.volume || 1.0);
-    audio.play();
-    
-    // Store reference for cleanup
-    this.soundSources.push(audio);
-    
-    return audio;
+    try {
+      const audio = new Audio(this.listener);
+      audio.setBuffer(sound.buffer);
+      audio.setLoop(options.loop || false);
+      audio.setVolume(options.volume || 1.0);
+      audio.play();
+      
+      // Store reference for cleanup
+      this.soundSources.push(audio);
+      
+      return audio;
+    } catch (err) {
+      console.error(`Failed to play sound ${name}:`, err);
+      return null;
+    }
   }
   
   stopAll(): void {
     for (const source of this.soundSources) {
       if (source.isPlaying) {
-        source.stop();
+        try {
+          source.stop();
+        } catch (err) {
+          console.error("Failed to stop audio source:", err);
+        }
       }
     }
     this.soundSources = [];
