@@ -60,6 +60,7 @@ export class GameScene {
     
     // Create scene first
     this.scene = new Scene();
+    this.scene.background = new Color(0x111111); // Dark background for better visibility
     
     // Create renderer second
     this.renderer = new WebGLRenderer({
@@ -71,7 +72,7 @@ export class GameScene {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = PCFSoftShadowMap;
     this.renderer.outputColorSpace = SRGBColorSpace;
-    this.renderer.setClearColor(0x222222);
+    this.renderer.setClearColor(0x111111);
     this.container.appendChild(this.renderer.domElement);
     
     // Create camera third (now renderer exists)
@@ -87,6 +88,8 @@ export class GameScene {
     
     // Handle window resize
     window.addEventListener('resize', this.onWindowResize.bind(this));
+    
+    console.log("GameScene constructor completed");
   }
   
   async initialize(): Promise<void> {
@@ -102,28 +105,20 @@ export class GameScene {
       console.log("Starting initialization");
       
       try {
-        // Load assets
-        this.onLoadProgress(0.2);
-        try {
-          console.log("Loading assets...");
-          this.loadAssets();
-          console.log("Assets loaded successfully");
-        } catch (error) {
-          console.error("Error loading assets:", error);
-        }
-        
         // Setup lighting
-        this.onLoadProgress(0.6);
+        this.onLoadProgress(0.2);
         console.log("Setting up lighting...");
         this.setupLighting();
         
         // Create environment
-        this.onLoadProgress(0.7);
+        this.onLoadProgress(0.4);
         console.log("Creating environment...");
         this.createEnvironment();
         
         // Add debug elements
-        this.addDebugElements();
+        this.onLoadProgress(0.6);
+        console.log("Adding debug elements...");
+        this.addDebugElements(true); // Always add enhanced debug elements
         
         // Create enemies
         this.onLoadProgress(0.8);
@@ -137,7 +132,9 @@ export class GameScene {
         
         clearTimeout(timeout);
         this.isInitialized = true;
+        this.onLoadProgress(1.0);
         if (this.onLoadComplete) this.onLoadComplete();
+        console.log("Scene initialization complete");
         resolve();
       } catch (error) {
         clearTimeout(timeout);
@@ -219,15 +216,15 @@ export class GameScene {
   
   private setupLighting(): void {
     // Create very bright ambient light so everything is visible
-    const ambientLight = new AmbientLight(0xffffff, 1.0); // Increase intensity
+    const ambientLight = new AmbientLight(0xffffff, 2.0); // Increase intensity
     this.scene.add(ambientLight);
     
     // Add hemisphere light for better ambient lighting
-    const hemisphereLight = new HemisphereLight(0xffffff, 0x444444, 1.0);
+    const hemisphereLight = new HemisphereLight(0xffffff, 0x444444, 1.5);
     this.scene.add(hemisphereLight);
     
     // Create directional light (like the sun)
-    const directionalLight = new DirectionalLight(0xffffff, 2.0); // Double intensity
+    const directionalLight = new DirectionalLight(0xffffff, 3.0); // Triple intensity
     directionalLight.position.set(5, 10, 5);
     directionalLight.castShadow = true;
     directionalLight.shadow.mapSize.width = 1024;
@@ -237,9 +234,18 @@ export class GameScene {
     this.scene.add(directionalLight);
     
     // Add point lights around the scene for extra visibility
-    const pointLight1 = new PointLight(0xffffff, 2.0, 20);
+    const pointLight1 = new PointLight(0xffffff, 3.0, 20);
     pointLight1.position.set(0, 5, 0);
     this.scene.add(pointLight1);
+    
+    // Add colored point lights for atmosphere
+    const blueLight = new PointLight(0x0088ff, 2.0, 10);
+    blueLight.position.set(-5, 3, -5);
+    this.scene.add(blueLight);
+    
+    const redLight = new PointLight(0xff3333, 2.0, 10);
+    redLight.position.set(5, 3, -5);
+    this.scene.add(redLight);
     
     console.log("Enhanced lighting setup complete");
   }
@@ -257,10 +263,23 @@ export class GameScene {
     floor.receiveShadow = true;
     this.scene.add(floor);
     
-    // Create some obstacles
-    this.createObstacle(3, 0, 3, 1, 1, 1, 0x555555);
-    this.createObstacle(-3, 0, -3, 1, 2, 1, 0x555555);
-    this.createObstacle(0, 0, -5, 2, 0.5, 2, 0x555555);
+    // Create a more visible floor for debugging
+    const debugFloor = new Mesh(
+      new PlaneGeometry(20, 20),
+      new MeshBasicMaterial({
+        color: 0x222222,
+        wireframe: true
+      })
+    );
+    debugFloor.rotation.x = -Math.PI / 2;
+    debugFloor.position.y = 0.01; // Slightly above the main floor
+    debugFloor.name = 'debug-floor';
+    this.scene.add(debugFloor);
+    
+    // Create some obstacles with bright colors
+    this.createObstacle(3, 0, 3, 1, 1, 1, 0xff5555);
+    this.createObstacle(-3, 0, -3, 1, 2, 1, 0x55ff55);
+    this.createObstacle(0, 0, -5, 2, 0.5, 2, 0x5555ff);
   }
   
   private createObstacle(
@@ -272,9 +291,22 @@ export class GameScene {
     depth: number,
     color: number
   ): void {
+    // Create a wireframe box first for better visibility
+    const wireGeometry = new BoxGeometry(width, height, depth);
+    const wireMaterial = new MeshBasicMaterial({
+      color: 0xffffff,
+      wireframe: true
+    });
+    const wireObstacle = new Mesh(wireGeometry, wireMaterial);
+    wireObstacle.position.set(x, y + height / 2, z);
+    this.scene.add(wireObstacle);
+    
+    // Create the solid obstacle
     const geometry = new BoxGeometry(width, height, depth);
     const material = new MeshStandardMaterial({
       color,
+      emissive: color,
+      emissiveIntensity: 0.2,
       roughness: 0.7,
       metalness: 0.3,
     });
@@ -421,46 +453,61 @@ export class GameScene {
     // Add a bright colored box to the scene center
     const debugBox = new Mesh(
       new BoxGeometry(enhanced ? 2 : 1, enhanced ? 2 : 1, enhanced ? 2 : 1),
-      new MeshBasicMaterial({ color: 0xff00ff }) // Bright pink
+      new MeshBasicMaterial({ 
+        color: 0xff00ff,
+        wireframe: true
+      })
     );
     debugBox.position.set(0, enhanced ? 3 : 1, 0);
     debugBox.name = 'debug-box';
     this.scene.add(debugBox);
     
-    // Add a ground plane that's clearly visible
-    const debugGround = new Mesh(
-      new PlaneGeometry(40, 40),
-      new MeshBasicMaterial({ 
-        color: 0x00ff00, 
-        wireframe: false, // Solid is more visible
-        opacity: 0.5,
-        transparent: true
-      })
+    // Add a solid box inside
+    const innerBox = new Mesh(
+      new BoxGeometry(enhanced ? 1.8 : 0.9, enhanced ? 1.8 : 0.9, enhanced ? 1.8 : 0.9),
+      new MeshBasicMaterial({ color: 0xff00ff })
     );
-    debugGround.rotation.x = -Math.PI / 2;
-    debugGround.position.y = 0;
-    debugGround.name = 'debug-ground';
-    this.scene.add(debugGround);
+    innerBox.position.set(0, enhanced ? 3 : 1, 0);
+    innerBox.name = 'debug-box-inner';
+    this.scene.add(innerBox);
     
     console.log("Enhanced debug elements added to scene");
   }
   
   public enableDebugView(): void {
+    console.log("Enabling debug view");
+    
+    // Remove any existing debug helpers
+    this.scene.children = this.scene.children.filter(child => 
+      !(child.name?.includes('debug-helper')));
+    
     // Reset camera position to see everything
     this.camera.position.set(0, 10, 10);
     this.camera.lookAt(0, 0, 0);
     
     // Add axis helpers to show X, Y, Z directions
     const axisHelper = new AxesHelper(5);
+    axisHelper.name = 'debug-helper-axis';
     this.scene.add(axisHelper);
     
     // Add a grid helper
-    const gridHelper = new GridHelper(20, 20);
+    const gridHelper = new GridHelper(20, 20, 0xffffff, 0x888888);
+    gridHelper.name = 'debug-helper-grid';
     this.scene.add(gridHelper);
     
     // Make debug elements larger and more visible
     this.addDebugElements(true);
     
     console.log("Debug view enabled");
+  }
+  
+  public disableDebugView(): void {
+    console.log("Disabling debug view");
+    
+    // Remove debug helpers
+    this.scene.children = this.scene.children.filter(child => 
+      !(child.name?.includes('debug-helper')));
+    
+    console.log("Debug view disabled");
   }
 }
