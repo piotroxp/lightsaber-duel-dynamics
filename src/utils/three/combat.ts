@@ -172,60 +172,34 @@ export class CombatSystem {
     // Skip if player is dead
     if (!this.player.isAlive()) return;
     
-    // Current time for cooldowns
-    const currentTime = performance.now() / 1000;
-    
     for (const enemy of this.enemies) {
       if (!enemy.isAlive()) continue;
       
-      // Calculate distance to player
-      const distanceToPlayer = enemy.position.distanceTo(this.player.getPosition());
-      
-      // Check if enemy is in attack range and not on cooldown
-      if (distanceToPlayer < enemy.getAttackRange() && 
-          currentTime - enemy.getLastAttackTime() > enemy.getAttackCooldown()) {
+      // CRITICAL: Directly apply damage when enemy is attacking and in range
+      if (enemy.isAttacking()) {
+        const playerPos = this.player.getPosition();
+        const enemyPos = enemy.getPosition();
+        const distanceToPlayer = enemyPos.distanceTo(playerPos);
         
-        // Trigger attack
-        enemy.attack();
+        // Force damage application at attack peak (when timer is ~0.3-0.5)
+        const attackProgress = enemy.getAttackTimer();
         
-        // Check if player is blocking
-        if (this.player.isBlocking()) {
-          // Calculate player facing direction vs enemy direction
-          const playerDirection = this.player.getDirection();
-          const enemyDirection = new Vector3()
-            .subVectors(enemy.position, this.player.getPosition())
-            .normalize();
+        if (attackProgress > 0.3 && attackProgress < 0.5 && distanceToPlayer < 3) {
+          console.log("Enemy attack connecting with player!");
           
-          // Dot product to check if player is facing the attack
-          const facingDot = playerDirection.dot(enemyDirection);
+          // Deal damage to player directly
+          const damage = enemy.getAttackDamage();
+          this.player.takeDamage(damage, enemyPos);
           
-          if (facingDot < -0.5) { // Player is mostly facing the enemy
-            // Successfully blocked!
-            const blockPosition = this.player.getPosition().clone();
-            blockPosition.y = 1.2;
-            
-            // Create clash effect
-            createSaberClashEffect(this.scene, blockPosition, '#ffff00');
-            
-            // Play clash sound
-            gameAudio.playSound('lightsaberClash', { volume: 0.7 });
-            
-            // Apply camera shake
-            this.applyCameraShake(0.3);
-          } else {
-            // Block failed, angled wrong
-            this.player.takeDamage(enemy.getAttackDamage() * 0.5); // Reduced damage
-          }
-        } else {
-          // Direct hit on player
-          this.player.takeDamage(enemy.getAttackDamage());
+          // Visual feedback
+          const attackPos = playerPos.clone();
+          attackPos.y = 1.4; // Adjust to player's torso height
+          createHitEffect(this.scene, attackPos, '#ff0000');
           
-          // Create hit effect
-          const hitPosition = this.player.getPosition().clone();
-          hitPosition.y = 1.4;
-          createHitEffect(this.scene, hitPosition, '#ff0000');
+          // Sound effect
+          gameAudio.playSound('player_hit', { volume: 0.7 });
           
-          // Apply camera shake
+          // Camera shake
           this.applyCameraShake(0.5);
         }
       }

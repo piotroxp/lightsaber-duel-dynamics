@@ -76,23 +76,34 @@ export class Enemy extends Group {
     this.health = options.health || 100;
     this.speed = options.speed || 2.0;
     this.attackRange = options.attackRange || 2.0;
-    this.attackDamage = options.attackDamage || 10;
+    this.attackDamage = options.attackDamage || 15;
     
     // Create enemy body
     this.createBody();
     
-    // Create lightsaber
+    // Create lightsaber with more dramatic parameters
     this.lightsaber = new Lightsaber({
       color: options.lightsaberColor || '#ff0000',
-      bladeLength: 1.2,
-      hiltLength: 0.2
+      bladeLength: 1.5,
+      hiltLength: 0.25,
+      glowIntensity: 1.5
     });
-    this.lightsaber.position.set(0.4, 0.9, 0.2);
-    this.lightsaber.rotateY(Math.PI * 0.25);
+    
+    // CRITICAL FIX: Position lightsaber clearly in hand
+    this.lightsaber.position.set(0.6, 1.1, 0.3);
+    this.lightsaber.rotateZ(-Math.PI / 6);
     this.add(this.lightsaber);
     
-    // Activate lightsaber
-    this.lightsaber.activate();
+    // Ensure lightsaber is active and visible
+    setTimeout(() => {
+      if (this.lightsaber) {
+        this.lightsaber.activate();
+        console.log("Enemy lightsaber activated");
+      }
+    }, 500);
+    
+    // Name the enemy for easy reference
+    this.name = "enemy";
   }
   
   update(deltaTime: number, playerPosition: Vector3, playerDirection: Vector3): void {
@@ -115,20 +126,23 @@ export class Enemy extends Group {
     // Skip if dead
     if (this.state === EnemyState.DEAD) return;
     
+    // CRITICAL: Store player position for attacking
+    this.targetPosition = playerPosition.clone();
+    
     // Calculate distance to player
     const distanceToPlayer = this.position.distanceTo(playerPosition);
     
     // Always face the player
     this.lookAt(playerPosition.x, this.position.y, playerPosition.z);
     
-    // CRITICAL FIX: Make enemy more aggressive and ensure attacks happen
+    // Attack or pursue based on distance
     if (distanceToPlayer <= this.attackRange) {
       // Get current time for cooldown
       const currentTime = performance.now() / 1000;
       
-      // FORCED ATTACK: Much more aggressive attack cycle
+      // Attack frequently when in range
       if (currentTime - this.lastAttackTime > 1.5) {
-        console.log("Enemy attempting attack!");
+        console.log("Enemy attempting attack at player:", playerPosition);
         this.attack();
         this.lastAttackTime = currentTime;
       } else {
@@ -136,7 +150,7 @@ export class Enemy extends Group {
         this.strafeAroundTarget(deltaTime, playerPosition);
       }
     } else if (distanceToPlayer <= this.aggroRange) {
-      // Move directly toward player at full speed
+      // Move toward player when outside attack range
       const moveSpeed = this.speed * deltaTime;
       const moveDirection = new Vector3()
         .subVectors(playerPosition, this.position)
@@ -152,7 +166,7 @@ export class Enemy extends Group {
   attack(): void {
     console.log("Enemy attack triggered!");
     
-    // Force attack regardless of state (except dead)
+    // Skip if dead
     if (this.state === EnemyState.DEAD) return;
     
     // Set state and timer
@@ -161,34 +175,60 @@ export class Enemy extends Group {
     this.hasAppliedDamage = false;
     this.lastAttackTime = performance.now() / 1000;
     
-    // CRITICAL: Force lightsaber to be active and swing if it exists
+    // Store the most recent player position from updateAggressive
+    if (!this.targetPosition || this.targetPosition.lengthSq() === 0) {
+      console.warn("No target position available, using forward direction");
+      // Create a default forward position if target is not set
+      this.targetPosition = new Vector3(
+        this.position.x + 0, 
+        this.position.y + 1, 
+        this.position.z + 1
+      );
+    }
+    
     if (this.lightsaber) {
-      // Force activate if needed
+      // Ensure lightsaber is active
       if (!this.lightsaber.isActive()) {
         this.lightsaber.activate();
       }
       
-      // Direct swing at player (fallback to regular swing if target isn't available)
+      // Calculate direction to target
+      const attackDirection = new Vector3()
+        .subVectors(this.targetPosition, this.position)
+        .normalize();
+      
+      // Keep direction horizontal
+      attackDirection.y = 0;
+      attackDirection.normalize();
+      
+      // Use default forward direction if calculated direction is invalid
+      if (isNaN(attackDirection.x) || isNaN(attackDirection.z)) {
+        attackDirection.set(0, 0, 1);
+      }
+      
+      console.log("Attacking toward:", this.targetPosition);
+      console.log("Attack direction:", attackDirection);
+      
+      // Face the target
+      this.lookAt(
+        this.position.x + attackDirection.x,
+        this.position.y,
+        this.position.z + attackDirection.z
+      );
+      
+      // Swing the lightsaber
       try {
-        const playerObj = this.scene.getObjectByName('player');
-        if (playerObj) {
-          const toPlayer = new Vector3().subVectors(playerObj.position, this.position).normalize();
-          this.lightsaber.swingAt(0, toPlayer);
-        } else {
-          console.log("Player not found for targeted swing, using regular swing");
-          this.lightsaber.swing(0);
-        }
+        this.lightsaber.swingAt(0, attackDirection);
       } catch (error) {
-        console.error("Error during enemy attack:", error);
-        // Fallback to regular swing
+        console.error("Error during swing:", error);
         this.lightsaber.swing(0);
       }
       
-      // Ensure attack sound plays
+      // Play sound effect
       gameAudio.playSound('lightsaberSwing', { volume: 0.8 });
     }
     
-    // Reset attack state after animation completes
+    // Reset state after animation completes
     setTimeout(() => {
       if (this.state === EnemyState.ATTACKING) {
         this.state = EnemyState.IDLE;

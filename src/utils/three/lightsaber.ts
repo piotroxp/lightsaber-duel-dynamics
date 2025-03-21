@@ -595,44 +595,94 @@ export class Lightsaber extends Group {
       Math.round(b * 255).toString(16).padStart(2, '0');
   }
 
-  // Add method to swing at a specific target
+  // Improve lightsaber swing visibility for enemy
   swingAt(type: number, targetDirection: Vector3): void {
-    if (!this.active || this.isSwinging) return;
+    if (!this.active) {
+      // Force activate if not active
+      this.activate();
+    }
     
+    if (this.isSwinging) return;
     this.isSwinging = true;
     
-    // Store original rotation and position
+    console.log("Executing lightsaber swing");
+    
+    // Store original rotation for reset
     const originalRotation = {
       x: this.rotation.x,
       y: this.rotation.y,
       z: this.rotation.z
     };
     
-    const originalPosition = {
-      x: this.position.x,
-      y: this.position.y,
-      z: this.position.z
-    };
+    // Create more dramatic swing animation based on type
+    let swingDuration = 400; // ms
+    let maxAngle = Math.PI * 0.8; // More dramatic angle
     
-    // Determine swing axis based on swing type and target direction
-    let swingAxis = new Vector3(0, 1, 0); // Default vertical axis
-    
-    if (type === 0) { // Horizontal swing - use up/down axis
-      swingAxis = new Vector3(0, 1, 0);
-    } else if (type === 1) { // Vertical swing - use left/right axis
-      swingAxis = new Vector3(1, 0, 0);
-    } else { // Diagonal swing - use diagonal axis
-      swingAxis = new Vector3(1, 1, 0).normalize();
-    }
-    
-    // Adjust swing direction to point toward target
+    // Direction to adjust for target
     const adjustmentAngle = Math.atan2(targetDirection.x, targetDirection.z);
     this.rotation.y = adjustmentAngle;
     
-    // Play swing sound
-    gameAudio.playSound('lightsaberSwing', { volume: 0.5 });
+    // CRITICAL FIX: Make swing more visible with larger rotation and color enhancement
+    const startTime = Date.now();
     
-    // Use existing swing animation but with adjusted starting rotation
-    this.swing(type);
+    // Increase brightness dramatically during swing
+    if (this.bladeLight) {
+      this.bladeLight.intensity *= 2;
+      this.bladeLight.distance *= 1.5;
+    }
+    
+    // Use more dramatic swing with visual trail effect
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / swingDuration, 1);
+      
+      // More dramatic swing movement
+      // For horizontal swing (type 0)
+      if (type === 0) {
+        // Wide horizontal arc with sine easing
+        const swingRatio = Math.sin(progress * Math.PI);
+        this.rotation.z = originalRotation.z + (maxAngle * swingRatio * (progress < 0.5 ? -1 : 1));
+      } 
+      // For vertical swing (type 1)
+      else if (type === 1) {
+        // Dramatic overhead swing
+        const swingRatio = Math.sin(progress * Math.PI);
+        this.rotation.x = originalRotation.x + (maxAngle * swingRatio);
+      }
+      // Diagonal swing (type 2)
+      else {
+        // Combined movement
+        const swingRatio = Math.sin(progress * Math.PI);
+        this.rotation.x = originalRotation.x + (maxAngle * 0.7 * swingRatio);
+        this.rotation.z = originalRotation.z + (maxAngle * 0.7 * swingRatio);
+      }
+      
+      // Continue animation until complete
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // Reset rotation and swing state
+        setTimeout(() => {
+          this.rotation.set(
+            originalRotation.x,
+            this.rotation.y, // Keep facing direction
+            originalRotation.z
+          );
+          this.isSwinging = false;
+          
+          // Reset blade light
+          if (this.bladeLight) {
+            this.bladeLight.intensity /= 2;
+            this.bladeLight.distance /= 1.5;
+          }
+        }, 100);
+      }
+    };
+    
+    // Start animation
+    animate();
+    
+    // Play swing sound
+    gameAudio.playSound('lightsaberSwing', { volume: 0.8 });
   }
 }
