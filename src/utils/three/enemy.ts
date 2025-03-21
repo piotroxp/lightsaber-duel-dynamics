@@ -442,4 +442,65 @@ export class Enemy extends Group {
       }
     }
   }
+
+  // Add missing updateAnimation method
+  private updateAnimation(deltaTime: number): void {
+    // Skip if the enemy is dead
+    if (this.state === EnemyState.DEAD) return;
+    
+    // Handle animation based on current state
+    switch (this.state) {
+      case EnemyState.PURSUING:
+        // Animate walking motion - basic limb movement
+        this.animateWalking(deltaTime);
+        break;
+        
+      case EnemyState.ATTACKING:
+        // Animation is handled by the attack method
+        break;
+        
+      case EnemyState.BLOCKING:
+        // Animation is handled by the block method
+        break;
+        
+      case EnemyState.STAGGERED:
+        // Update stagger recovery
+        this.staggerTime -= deltaTime;
+        if (this.staggerTime <= 0) {
+          this.state = EnemyState.IDLE;
+        }
+        break;
+        
+      case EnemyState.IDLE:
+      default:
+        // Reset limbs to neutral position
+        this.resetLimbPositions();
+        break;
+    }
+  }
+
+  // Helper method for walking animation
+  private animateWalking(deltaTime: number): void {
+    // Simple walking animation - leg and arm movement
+    const time = performance.now() * 0.001;
+    const legSwing = Math.sin(time * 5) * 0.2;
+    
+    if (this.leftLeg && this.rightLeg) {
+      this.leftLeg.rotation.x = legSwing;
+      this.rightLeg.rotation.x = -legSwing;
+    }
+    
+    if (this.leftArm && this.rightArm) {
+      this.leftArm.rotation.x = -legSwing * 0.5;
+      this.rightArm.rotation.x = legSwing * 0.5;
+    }
+  }
+
+  // Helper method to reset limb positions
+  private resetLimbPositions(): void {
+    if (this.leftLeg) this.leftLeg.rotation.set(0, 0, 0);
+    if (this.rightLeg) this.rightLeg.rotation.set(0, 0, 0);
+    if (this.leftArm) this.leftArm.rotation.set(0, 0, 0);
+    if (this.rightArm) this.rightArm.rotation.set(0, 0, 0);
+  }
 }
