@@ -62,9 +62,12 @@ export class Player extends Group {
     this.lightsaber = new Lightsaber({
       color: '#3366ff', // Blue color
       bladeLength: 1.2,
-      hiltLength: 0.2
+      hiltLength: 0.25, // Slightly longer hilt
+      glowIntensity: 1.2
     });
-    this.lightsaber.position.set(0.4, -0.3, -0.5); // Position relative to camera
+    
+    // Reposition lightsaber lower in the viewport so entire blade is visible
+    this.lightsaber.position.set(0.1, -0.3, -0.35);
     this.camera.add(this.lightsaber);
     
     // Add keyboard event listeners
@@ -192,23 +195,37 @@ export class Player extends Group {
   }
   
   private attack(): void {
-    if (this.state === PlayerState.DEAD || this.state === PlayerState.STAGGERED) return;
+    if (this.state === PlayerState.ATTACKING || 
+        this.state === PlayerState.DEAD || 
+        this.state === PlayerState.STAGGERED) return;
     
+    // Check cooldown
     const currentTime = performance.now() / 1000;
     if (currentTime - this.lastAttackTime < this.attackCooldown) return;
     
     this.lastAttackTime = currentTime;
     this.state = PlayerState.ATTACKING;
     
-    // Swing lightsaber using the enhanced swing method
-    this.lightsaber.swing();
+    // Determine movement direction for swing
+    let movementDirection: 'left' | 'right' | 'forward' | 'none' = 'none';
     
-    // Reset state after attack
+    if (this.isMovingLeft) {
+      movementDirection = 'left';
+    } else if (this.isMovingRight) {
+      movementDirection = 'right';
+    } else if (this.isMovingForward) {
+      movementDirection = 'forward';
+    }
+    
+    // Swing lightsaber using the enhanced swing method with direction
+    this.lightsaber.swing(movementDirection);
+    
+    // Reset state after attack animation
     setTimeout(() => {
       if (this.state === PlayerState.ATTACKING) {
         this.state = PlayerState.IDLE;
       }
-    }, 500);
+    }, 300);
   }
   
   private block(): void {
