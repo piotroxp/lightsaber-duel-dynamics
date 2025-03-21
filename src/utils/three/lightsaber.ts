@@ -1,4 +1,4 @@
-import { Group, Vector3, Mesh, CylinderGeometry, MeshStandardMaterial, MeshBasicMaterial, Color, AdditiveBlending, SpotLight, Object3D } from 'three';
+import { Group, Vector3, Mesh, CylinderGeometry, MeshStandardMaterial, MeshBasicMaterial, Color, AdditiveBlending, SpotLight, Object3D, PointLight } from 'three';
 import { ParticleEmitter } from './effects';
 import gameAudio from './audio';
 
@@ -18,8 +18,12 @@ export class Lightsaber extends Group {
   private activationProgress: number = 0;
   private hilt: Mesh;
   private blade: Mesh;
-  private bladeLight: SpotLight;
+  private bladeLight: PointLight;
   private glowEmitter: ParticleEmitter | null = null;
+  private isSwinging: boolean = false;
+  private isBlocking: boolean = false;
+  private initialRotation = { x: 0, y: 0, z: 0 };
+  private swingAnimation: number | null = null;
 
   constructor(options: LightsaberOptions = {}) {
     super(); // Call the Group constructor
@@ -53,21 +57,22 @@ export class Lightsaber extends Group {
     this.add(this.blade);
     
     // Create light for blade glow
-    this.bladeLight = new SpotLight(
-      this.bladeColor,
-      2,
-      5,
-      Math.PI / 4,
-      0.5,
-      2
-    );
-    this.bladeLight.position.y = this.hiltLength;
-    this.bladeLight.target.position.y = this.hiltLength + this.bladeLength;
+    this.bladeLight = new PointLight(this.bladeColor, 1, 2);
+    this.bladeLight.position.y = this.hiltLength + this.bladeLength / 2;
     this.add(this.bladeLight);
-    this.add(this.bladeLight.target);
     
     // Disable the light initially
     this.bladeLight.visible = false;
+    
+    // Store initial rotation
+    this.initialRotation = { 
+      x: this.rotation.x,
+      y: this.rotation.y,
+      z: this.rotation.z
+    };
+    
+    // Set name for debugging
+    this.name = 'lightsaber';
   }
   
   createGlowEmitter(): void {
@@ -126,26 +131,84 @@ export class Lightsaber extends Group {
   }
   
   activate(): void {
-    if (!this.active) {
-      this.active = true;
+    if (this.active) return;
+    
+    this.active = true;
+    
+    // Play activation sound
+    gameAudio.playSound('lightsaberOn', { volume: 0.7 });
+    
+    // Animate blade appearance
+    const startTime = Date.now();
+    const duration = 300; // ms
+    let progress = 0;
+    
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      progress = Math.min(elapsed / duration, 1);
       
-      // Play activation sound
-      gameAudio.playSound('lightsaberOn', { volume: 0.5 });
-      
-      // Create glow emitter if not already created
-      if (!this.glowEmitter) {
-        this.createGlowEmitter();
+      // Update blade visibility
+      if (this.blade.material instanceof MeshBasicMaterial) {
+        this.blade.material.opacity = progress * 0.8;
       }
-    }
+      
+      // Grow blade from hilt
+      this.blade.scale.set(1, progress, 1);
+      
+      // Enable light when partially extended
+      if (progress > 0.3 && !this.bladeLight.visible) {
+        this.bladeLight.visible = true;
+      }
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // When fully activated, play the hum sound
+        gameAudio.playSound('lightsaberHum', { loop: true, volume: 0.3 });
+      }
+    };
+    
+    // Start animation
+    animate();
   }
   
   deactivate(): void {
-    if (this.active) {
-      this.active = false;
+    if (!this.active) return;
+    
+    // Play deactivation sound
+    gameAudio.playSound('lightsaberOff', { volume: 0.5 });
+    
+    // Animate blade disappearance
+    const startTime = Date.now();
+    const duration = 200; // ms
+    let progress = 0;
+    
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      progress = Math.min(elapsed / duration, 1);
       
-      // Play deactivation sound
-      gameAudio.playSound('lightsaberOff', { volume: 0.5 });
-    }
+      // Update blade visibility
+      if (this.blade.material instanceof MeshBasicMaterial) {
+        this.blade.material.opacity = (1 - progress) * 0.8;
+      }
+      
+      // Shrink blade into hilt
+      this.blade.scale.set(1, 1 - progress, 1);
+      
+      // Disable light when mostly retracted
+      if (progress > 0.7 && this.bladeLight.visible) {
+        this.bladeLight.visible = false;
+      }
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        this.active = false;
+      }
+    };
+    
+    // Start animation
+    animate();
   }
   
   isActive(): boolean {
@@ -165,11 +228,9 @@ export class Lightsaber extends Group {
   }
   
   getBladeTopPosition(): Vector3 {
-    // Get the position of the tip of the saber in world space
-    const tipLocalPosition = new Vector3(0, this.hiltLength + this.bladeLength * this.activationProgress, 0);
-    const tipWorldPosition = tipLocalPosition.clone();
-    this.localToWorld(tipWorldPosition);
-    return tipWorldPosition;
+    // Calculate the position of the top of the blade in world space
+    const bladeTop = new Vector3(0, this.hiltLength + this.bladeLength, 0); // Local position of blade top
+    return this.localToWorld(bladeTop.clone());
   }
   
   getSaberTipPosition(): Vector3 {
@@ -187,5 +248,81 @@ export class Lightsaber extends Group {
   // Add compatibility with Object3D
   localToWorld(vector: Vector3): Vector3 {
     return vector.applyMatrix4(this.matrixWorld);
+  }
+  
+  swing(): void {
+    if (!this.active || this.isSwinging) return;
+    
+    this.isSwinging = true;
+    
+    // Play swing sound
+    gameAudio.playSound('lightsaberSwing', { volume: 0.5 });
+    
+    // Store original rotation
+    const originalRotation = {
+      x: this.rotation.x,
+      y: this.rotation.y,
+      z: this.rotation.z
+    };
+    
+    // Set up swing animation
+    const startTime = Date.now();
+    const duration = 300; // ms
+    let progress = 0;
+    
+    if (this.swingAnimation) {
+      cancelAnimationFrame(this.swingAnimation);
+    }
+    
+    const animateSwing = () => {
+      const elapsed = Date.now() - startTime;
+      progress = Math.min(elapsed / duration, 1);
+      
+      // Swing motion - adjust these values for desired swing effect
+      if (progress < 0.5) {
+        // Forward swing
+        this.rotation.z = originalRotation.z - Math.sin(progress * Math.PI) * 1.2;
+      } else {
+        // Return swing
+        this.rotation.z = originalRotation.z - Math.sin((1 - progress) * Math.PI) * 0.5;
+      }
+      
+      if (progress < 1) {
+        this.swingAnimation = requestAnimationFrame(animateSwing);
+      } else {
+        // Reset rotation when done
+        this.rotation.set(originalRotation.x, originalRotation.y, originalRotation.z);
+        this.isSwinging = false;
+        this.swingAnimation = null;
+      }
+    };
+    
+    // Start the animation
+    this.swingAnimation = requestAnimationFrame(animateSwing);
+  }
+  
+  block(): void {
+    if (!this.active || this.isBlocking) return;
+    
+    this.isBlocking = true;
+    
+    // Play block sound
+    gameAudio.playSound('lightsaberMove', { volume: 0.5 });
+    
+    // Position lightsaber in defensive position
+    const originalRotation = {
+      x: this.rotation.x,
+      y: this.rotation.y,
+      z: this.rotation.z
+    };
+    
+    // Horizontal blocking position
+    this.rotation.z = originalRotation.z + Math.PI / 2;
+    
+    // Reset after a short delay
+    setTimeout(() => {
+      this.rotation.set(originalRotation.x, originalRotation.y, originalRotation.z);
+      this.isBlocking = false;
+    }, 200);
   }
 }
