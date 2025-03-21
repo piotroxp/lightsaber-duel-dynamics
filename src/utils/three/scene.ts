@@ -172,50 +172,47 @@ export class GameScene {
   
   private async loadAssets(): Promise<boolean> {
     try {
-      // Initialize audio with better progress tracking
-      await gameAudio.initialize((progress) => {
-        console.log("Audio loading progress:", progress);
-        this.onLoadProgress(progress * 0.8); // Audio is 80% of loading
-      });
+      // Initialize audio with better progress tracking and error handling
+      try {
+        await gameAudio.initialize((progress) => {
+          console.log("Audio loading progress:", progress);
+          this.onLoadProgress(progress * 0.8); // Audio is 80% of loading
+        });
+      } catch (audioError) {
+        console.error("Audio initialization error:", audioError);
+        // Continue without audio
+        this.onLoadProgress(0.8); // Skip to 80% since audio failed
+      }
       
-      // Load textures
-      const groundTexture = await loadTextureWithFallback('/textures/ground.jpg');
+      // Load textures with error handling
+      try {
+        const groundTexture = await loadTextureWithFallback('/textures/ground.jpg');
+        // Use groundTexture...
+      } catch (textureError) {
+        console.error("Texture loading error:", textureError);
+        // Continue with default textures
+      }
       
-      // Setup lighting
-      this.onLoadProgress(0.6);
-      console.log("Setting up lighting...");
-      this.setupLighting();
-      
-      // Create environment
-      this.onLoadProgress(0.7);
-      console.log("Creating environment...");
-      this.createEnvironment();
-      
-      // Add debug elements
-      this.addDebugElements();
-      
-      // Create enemies
-      this.onLoadProgress(0.8);
-      console.log("Creating enemies...");
-      this.createEnemies();
-      
-      // Start animation loop
-      this.onLoadProgress(0.9);
-      console.log("Starting animation loop...");
-      this.animate();
-      
+      // Always progress to completion even if some assets fail
       this.isInitialized = true;
-      
-      // Report completion
       this.onLoadProgress(1.0);
-      console.log("Initialization complete");
-      this.onLoadComplete();
+      
+      // Force completion
+      if (this.onLoadComplete) {
+        setTimeout(() => {
+          this.onLoadComplete();
+        }, 1000);
+      }
       
       return true;
     } catch (error) {
       console.error("Error loading assets:", error);
-      // Complete loading even if there's an error
+      // Still complete loading even if there's an error
+      this.isInitialized = true;
       this.onLoadProgress(1.0);
+      if (this.onLoadComplete) {
+        this.onLoadComplete();
+      }
       return false;
     }
   }

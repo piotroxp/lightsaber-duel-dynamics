@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 
@@ -6,15 +5,18 @@ interface LoadingScreenProps {
   progress: number;
   isLoaded: boolean;
   onStart: () => void;
+  onSkip?: () => void;
 }
 
 const LoadingScreen: React.FC<LoadingScreenProps> = ({ 
   progress, 
   isLoaded, 
-  onStart
+  onStart,
+  onSkip
 }) => {
   const [showTip, setShowTip] = useState(0);
   const [showStartButton, setShowStartButton] = useState(false);
+  const [showSkipButton, setShowSkipButton] = useState(false);
   
   const tips = [
     "Move with WASD, look around with your mouse",
@@ -37,7 +39,17 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
       }, 500);
     }
     
-    return () => clearInterval(interval);
+    // Show skip button after a delay if loading takes too long
+    const skipTimer = setTimeout(() => {
+      if (progress < 0.9) {
+        setShowSkipButton(true);
+      }
+    }, 8000);
+    
+    return () => {
+      clearInterval(interval);
+      clearTimeout(skipTimer);
+    };
   }, [progress, tips.length]);
   
   return (
@@ -66,17 +78,31 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
         </div>
       </div>
       
-      {showStartButton && (
-        <motion.button 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="mt-8 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-          onClick={onStart}
-        >
-          Start Game
-        </motion.button>
-      )}
+      <div className="flex flex-col space-y-4 mt-8">
+        {showStartButton && (
+          <motion.button 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            onClick={onStart}
+          >
+            Start Game
+          </motion.button>
+        )}
+        
+        {showSkipButton && onSkip && (
+          <motion.button 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.8 }}
+            transition={{ duration: 0.5 }}
+            className="px-6 py-2 bg-gray-700 text-white text-sm rounded-md hover:bg-gray-600"
+            onClick={onSkip}
+          >
+            Skip Loading
+          </motion.button>
+        )}
+      </div>
     </div>
   );
 };
