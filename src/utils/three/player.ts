@@ -255,7 +255,7 @@ export class Player extends Group {
     this.lastBlockTime = performance.now() / 1000;
   }
   
-  takeDamage(amount: number): void {
+  takeDamage(amount: number, hitPosition?: Vector3): void {
     if (this.state === PlayerState.DEAD) return;
     
     // Reduce damage if blocking
@@ -265,6 +265,7 @@ export class Player extends Group {
     }
     
     // Apply damage
+    console.log(`Player taking ${actualDamage} damage`);
     this.health -= actualDamage;
     
     // Clamp health to 0
@@ -273,6 +274,7 @@ export class Player extends Group {
     // Check for death
     if (this.health <= 0) {
       this.state = PlayerState.DEAD;
+      console.log("Player died");
     } else {
       // Stagger briefly
       this.state = PlayerState.STAGGERED;
@@ -291,10 +293,13 @@ export class Player extends Group {
   
   private createDamageEffect(): void {
     try {
-      createHitEffect(this.position, this.scene);
-      
-      // Play hit sound
-      gameAudio.playSound('player_hit', { volume: 0.5 });
+      // Use the scene reference for the effect
+      if (this.scene) {
+        createHitEffect(this.scene, this.position.clone(), '#ff3333');
+        
+        // Play hit sound
+        gameAudio.playSound('player_hit', { volume: 0.5 });
+      }
     } catch (error) {
       console.warn("Failed to create damage effect:", error);
     }
@@ -343,3 +348,4 @@ export class Player extends Group {
     return this.camera.quaternion;
   }
 }
+

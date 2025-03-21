@@ -39,7 +39,7 @@ export class GameScene {
   private enemies: Enemy[] = [];
   private combatSystem: CombatSystem;
   private clock: Clock = new Clock();
-  private isInitialized: boolean = false;
+  private _isInitialized: boolean = false;
   private isAnimating: boolean = false;
   private onLoadProgress: (progress: number) => void;
   private onLoadComplete: () => void;
@@ -92,7 +92,7 @@ export class GameScene {
   async initialize(): Promise<void> {
     console.log("Starting game initialization");
     
-    if (this.isInitialized) {
+    if (this._isInitialized) {
       console.log("Game already initialized");
       return;
     }
@@ -115,7 +115,7 @@ export class GameScene {
       console.log("Enemies setup complete");
       
       // Mark as initialized
-      this.isInitialized = true;
+      this._isInitialized = true;
       console.log("Game initialization complete");
       
       // Start animation loop
@@ -317,7 +317,7 @@ export class GameScene {
       this.player.update(deltaTime);
     }
     
-    // CRITICAL FIX: Update enemies with proper parameters
+    // FIXED: Update enemies with proper parameters
     for (const enemy of this.enemies) {
       if (enemy && typeof enemy.update === 'function') {
         try {
@@ -329,6 +329,11 @@ export class GameScene {
           console.warn("Error updating enemy:", error);
         }
       }
+    }
+    
+    // Update combat system
+    if (this.combatSystem) {
+      this.combatSystem.update(deltaTime);
     }
     
     // Render the scene
@@ -508,7 +513,7 @@ export class GameScene {
   
   public debug(): void {
     console.log("Debug info:");
-    console.log("- isInitialized:", this.isInitialized);
+    console.log("- isInitialized:", this._isInitialized);
     console.log("- isAnimating:", this.isAnimating);
     console.log("- container:", this.container);
     console.log("- camera position:", this.camera?.position);
@@ -572,23 +577,20 @@ export class GameScene {
   private setupPlayer(): void {
     console.log("Setting up player");
     
-    // Instead of calling initialize which doesn't exist, we'll do the setup directly
-    // Comment out the problematic line
-    // this.player.initialize();
-    
     // Position player properly
-    this.player.position.set(0, 1, 0);
+    this.player.position.set(0, 1.7, 0);
     
-    // Activate the lightsaber if needed
-    try {
-      if (this.player.lightsaber && typeof this.player.lightsaber.activate === 'function') {
-        this.player.lightsaber.activate();
-      }
-    } catch (error) {
-      console.warn("Failed to activate player lightsaber:", error);
-    }
+    // Set player name for easy reference
+    this.player.name = 'player';
     
-    // Additional player setup if needed
+    // Set camera for the combat system
+    this.combatSystem.setCamera(this.camera);
+    
     console.log("Player positioned at:", this.player.position);
+  }
+
+  // Add public getter method for isInitialized
+  get isInitialized(): boolean {
+    return this._isInitialized;
   }
 }

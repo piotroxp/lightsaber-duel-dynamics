@@ -161,6 +161,20 @@ export class Enemy extends Group {
     this.hasAppliedDamage = false;
     this.lastAttackTime = performance.now() / 1000;
     
+    // Get player position for targeting
+    const playerObj = this.scene.getObjectByName('player');
+    let attackDirection = new Vector3(0, 0, -1); // Default forward direction
+    
+    // Target player direction if available
+    if (playerObj) {
+      attackDirection = new Vector3()
+        .subVectors(playerObj.position, this.position)
+        .normalize();
+      
+      // Aim the swing at the player
+      this.lookAt(playerObj.position);
+    }
+    
     // CRITICAL: Force lightsaber to be active and swing if it exists
     if (this.lightsaber) {
       // Force activate if needed
@@ -168,21 +182,8 @@ export class Enemy extends Group {
         this.lightsaber.activate();
       }
       
-      // Direct swing at player (fallback to regular swing if target isn't available)
-      try {
-        const playerObj = this.scene.getObjectByName('player');
-        if (playerObj) {
-          const toPlayer = new Vector3().subVectors(playerObj.position, this.position).normalize();
-          this.lightsaber.swingAt(0, toPlayer);
-        } else {
-          console.log("Player not found for targeted swing, using regular swing");
-          this.lightsaber.swing(0);
-        }
-      } catch (error) {
-        console.error("Error during enemy attack:", error);
-        // Fallback to regular swing
-        this.lightsaber.swing(0);
-      }
+      // Direct swing at player
+      this.lightsaber.swingAt(attackDirection);
       
       // Ensure attack sound plays
       gameAudio.playSound('lightsaberSwing', { volume: 0.8 });
@@ -194,6 +195,14 @@ export class Enemy extends Group {
         this.state = EnemyState.IDLE;
       }
     }, 800);
+  }
+  
+  getLastAttackTime(): number {
+    return this.lastAttackTime;
+  }
+  
+  getAttackCooldown(): number {
+    return 1.5; // 1.5 seconds between attacks
   }
   
   takeDamage(amount: number, hitPosition: Vector3): number {
