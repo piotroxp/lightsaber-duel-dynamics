@@ -1,4 +1,3 @@
-
 import {
   Group,
   BufferGeometry,
@@ -8,7 +7,11 @@ import {
   Vector3,
   Color,
   AdditiveBlending,
-  Object3D
+  Object3D,
+  Scene,
+  Mesh,
+  SphereGeometry,
+  MeshBasicMaterial
 } from 'three';
 
 // Particle emitter options
@@ -233,4 +236,184 @@ export class ParticleEmitter extends Group {
     // Update geometry
     this.updateGeometry();
   }
+}
+
+export function createHitEffect(
+  scene: Scene, 
+  position: Vector3,
+  color: number = 0xff0000,
+  size: number = 0.5,
+  duration: number = 500
+): void {
+  // Create a sphere for the hit effect
+  const geometry = new SphereGeometry(size, 8, 8);
+  const material = new MeshBasicMaterial({ 
+    color: color,
+    transparent: true,
+    opacity: 0.7
+  });
+  
+  const hitEffect = new Mesh(geometry, material);
+  hitEffect.position.copy(position);
+  scene.add(hitEffect);
+  
+  // Animation variables
+  const startTime = Date.now();
+  const startOpacity = material.opacity;
+  const startScale = hitEffect.scale.x;
+  
+  // Animate the hit effect
+  function animate() {
+    const elapsedTime = Date.now() - startTime;
+    const progress = Math.min(elapsedTime / duration, 1);
+    
+    // Fade out and expand
+    material.opacity = startOpacity * (1 - progress);
+    const newScale = startScale * (1 + progress);
+    hitEffect.scale.set(newScale, newScale, newScale);
+    
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      // Clean up
+      scene.remove(hitEffect);
+      geometry.dispose();
+      material.dispose();
+    }
+  }
+  
+  // Start animation
+  animate();
+}
+
+// Additional utility for creating particle effects
+export function createParticleEffect(
+  scene: Scene,
+  position: Vector3,
+  count: number = 10,
+  color: number = 0xffff00,
+  size: number = 0.1,
+  speed: number = 2,
+  duration: number = 1000
+): void {
+  const particles: Object3D[] = [];
+  
+  // Create particles
+  for (let i = 0; i < count; i++) {
+    const geometry = new SphereGeometry(size * (0.5 + Math.random() * 0.5), 4, 4);
+    const material = new MeshBasicMaterial({ 
+      color: color,
+      transparent: true,
+      opacity: 0.8
+    });
+    
+    const particle = new Mesh(geometry, material);
+    particle.position.copy(position);
+    
+    // Random direction
+    const direction = new Vector3(
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2
+    ).normalize();
+    
+    // Store direction and velocity on the particle
+    (particle as any).direction = direction;
+    (particle as any).velocity = speed * (0.5 + Math.random() * 0.5);
+    
+    particles.push(particle);
+    scene.add(particle);
+  }
+  
+  // Animation
+  const startTime = Date.now();
+  
+  function animate() {
+    const elapsedTime = Date.now() - startTime;
+    const progress = Math.min(elapsedTime / duration, 1);
+    
+    // Move and fade particles
+    particles.forEach(particle => {
+      const direction = (particle as any).direction;
+      const velocity = (particle as any).velocity;
+      
+      particle.position.add(direction.clone().multiplyScalar(velocity * 0.1));
+      (particle.material as MeshBasicMaterial).opacity = 0.8 * (1 - progress);
+    });
+    
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      // Clean up
+      particles.forEach(particle => {
+        scene.remove(particle);
+        (particle as Mesh).geometry.dispose();
+        (particle as Mesh).material.dispose();
+      });
+    }
+  }
+  
+  // Start animation
+  animate();
+}
+
+export function createSaberClashEffect(
+  scene: Scene,
+  position: Vector3,
+  color: number = 0xffaa00, // Yellow-orange for clash
+  size: number = 0.8,
+  duration: number = 800
+): void {
+  // Create central flash
+  createHitEffect(scene, position, color, size, duration);
+  
+  // Create particle burst
+  createParticleEffect(
+    scene,
+    position,
+    15, // More particles for dramatic effect
+    color,
+    0.15,
+    3.5, // Faster particles
+    duration
+  );
+  
+  // Create additional shock wave effect
+  const geometry = new SphereGeometry(size * 0.5, 16, 16);
+  const material = new MeshBasicMaterial({ 
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.9,
+    wireframe: true
+  });
+  
+  const shockwave = new Mesh(geometry, material);
+  shockwave.position.copy(position);
+  scene.add(shockwave);
+  
+  // Animation variables
+  const startTime = Date.now();
+  
+  // Animate the shockwave
+  function animateShockwave() {
+    const elapsedTime = Date.now() - startTime;
+    const progress = Math.min(elapsedTime / duration, 1);
+    
+    // Expand and fade
+    const newScale = 1 + progress * 3;
+    shockwave.scale.set(newScale, newScale, newScale);
+    material.opacity = 0.9 * (1 - progress);
+    
+    if (progress < 1) {
+      requestAnimationFrame(animateShockwave);
+    } else {
+      // Clean up
+      scene.remove(shockwave);
+      geometry.dispose();
+      material.dispose();
+    }
+  }
+  
+  // Start animation
+  animateShockwave();
 }
