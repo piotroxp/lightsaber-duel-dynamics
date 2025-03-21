@@ -32,43 +32,77 @@ export class CombatSystem {
   }
   
   update(deltaTime: number): void {
-    // Update player and enemy attack collisions
-    this.checkPlayerAttacks(deltaTime);
-    this.checkEnemyAttacks(deltaTime);
+    // Call the checkSaberCollisions method directly
+    this.checkSaberCollisions();
     
-    // CRITICAL: Force enemy to swing lightsaber and deal damage
-    for (const enemy of this.enemies) {
-      if (enemy.isAlive() && enemy.isAttacking()) {
-        if (!enemy.hasAppliedDamage && enemy.getAttackTimer() > 0.2) {
-          // Apply damage only once during attack animation at the right moment
-          const playerPos = this.player.getPosition();
-          const enemyPos = enemy.getPosition();
-          const distanceToPlayer = enemyPos.distanceTo(playerPos);
+    // Check for player attacking enemies
+    if (this.player.isAttacking()) {
+      const playerPos = this.player.getPosition();
+      
+      for (const enemy of this.enemies) {
+        if (!enemy.isAlive()) continue;
+        
+        // Check distance between player and enemy
+        const distanceToEnemy = enemy.position.distanceTo(playerPos);
+        
+        // If in strike range, apply damage
+        if (distanceToEnemy < 2.5) {
+          // Get current attack position (lightsaber blade)
+          const attackPos = this.player.getLightsaberPosition();
           
-          // Check if player is in range
-          if (distanceToPlayer <= enemy.getAttackRange()) {
-            const damage = enemy.getAttackDamage();
+          // Calculate more precise hit detection
+          const hitDist = enemy.position.distanceTo(attackPos);
+          
+          // CRITICAL: Direct damage application - guaranteed hit at close range
+          if (hitDist < 2.0) {
+            console.log("Player hit enemy with lightsaber!");
             
-            // Check if player is blocking in the right direction
-            if (this.player.isBlocking()) {
-              // Create clash effect at lightsaber intersection
-              const saberPos = this.player.getLightsaberPosition();
-              this.createClashEffect(saberPos);
-              
-              // Play clash sound
-              gameAudio.playSound('lightsaberClash', { volume: 0.7 });
-            } else {
-              // Deal damage to player if not blocking
-              this.player.takeDamage(damage, enemyPos);
-            }
+            // Apply significant damage
+            enemy.takeDamage(25, playerPos);
             
-            // Mark damage as applied for this attack
-            enemy.hasAppliedDamage = true;
+            // Visual and sound effects
+            const hitPosition = enemy.position.clone();
+            hitPosition.y = 1.2;
+            createHitEffect(this.scene, hitPosition, '#ff0000');
+            gameAudio.playSound('enemyHit', { volume: 0.8 });
+            
+            // Force feedback
+            this.applyCameraShake(0.3);
+            
+            // Only hit one enemy per swing
+            break;
           }
         }
-      } else {
-        // Reset damage flag when not attacking
-        enemy.hasAppliedDamage = false;
+      }
+    }
+    
+    // Check for enemies attacking player
+    for (const enemy of this.enemies) {
+      if (!enemy.isAlive() || !enemy.isAttacking()) continue;
+      
+      // CRITICAL FIX: Force damage application during attack animation
+      const attackProgress = enemy.getAttackTimer();
+      
+      // Apply damage at the peak of the swing
+      if (attackProgress > 0.2 && attackProgress < 0.5) {
+        const distanceToPlayer = enemy.position.distanceTo(this.player.getPosition());
+        
+        // If enemy is close enough to hit player
+        if (distanceToPlayer < 2.5) {
+          console.log("Enemy hit player with lightsaber!");
+          
+          // Apply damage directly
+          this.player.takeDamage(enemy.getAttackDamage(), enemy.getPosition());
+          
+          // Visual and sound effects
+          const hitPos = this.player.getPosition().clone();
+          hitPos.y = 1.2;
+          createHitEffect(this.scene, hitPos, '#ff0000');
+          gameAudio.playSound('playerHit', { volume: 0.8 });
+          
+          // Force feedback
+          this.applyCameraShake(0.5);
+        }
       }
     }
   }
@@ -135,36 +169,54 @@ export class CombatSystem {
   }
   
   private checkSaberCollisions(): void {
-    // Check for lightsaber vs lightsaber collisions
     if (!this.player.isAlive()) return;
     
-    const playerSaberTip = this.player.getLightsaberPosition();
-    
-    for (const enemy of this.enemies) {
-      if (!enemy.isAlive()) continue;
+    try {
+      // Get player lightsaber position
+      const playerSaberTip = this.player.getLightsaberPosition();
+      console.log("Player saber position:", playerSaberTip);
       
-      const enemySaberTip = enemy.getLightsaberPosition();
-      
-      // Calculate distance between sabers
-      const saberDistance = playerSaberTip.distanceTo(enemySaberTip);
-      
-      if (saberDistance < 0.4) { // Sabers are clashing
-        // Calculate midpoint for effect
-        const clashPosition = playerSaberTip.clone().lerp(enemySaberTip, 0.5);
+      for (const enemy of this.enemies) {
+        if (!enemy.isAlive()) continue;
         
-        // Create clash effect
-        createSaberClashEffect(this.scene, clashPosition, '#ffff00');
-        
-        // Play clash sound
-        this.player.playLightsaberClashSound();
-        enemy.playLightsaberClashSound();
-        
-        // Apply camera shake
-        this.applyCameraShake(0.4);
-        
-        // Mark the clash so we don't create too many effects
-        this.lastHitTime = performance.now() / 1000;
+        try {
+          // Get enemy lightsaber position
+          const enemySaberTip = enemy.getLightsaberPosition();
+          console.log("Enemy saber position:", enemySaberTip);
+          
+          // Calculate distance between sabers
+          const saberDistance = playerSaberTip.distanceTo(enemySaberTip);
+          console.log("Saber distance:", saberDistance);
+          
+          // CRITICAL: More generous collision detection
+          if (saberDistance < 1.5) {
+            console.log("LIGHTSABER CLASH DETECTED!");
+            
+            // Calculate midpoint for effect
+            const clashPosition = playerSaberTip.clone().lerp(enemySaberTip, 0.5);
+            
+            // Create clash effect
+            createSaberClashEffect(this.scene, clashPosition, '#ffffff');
+            
+            // Play clash sound
+            gameAudio.playSound('lightsaberClash', { volume: 1.0 });
+            
+            // Apply camera shake
+            this.applyCameraShake(0.6);
+            
+            // Force sabers back to spawn positions by applying "stagger" effect
+            this.player.applyStagger(0.3);
+            enemy.applyStagger(0.3);
+            
+            // Mark the clash so we don't create too many effects
+            this.lastHitTime = performance.now() / 1000;
+          }
+        } catch (error) {
+          console.error("Error during saber collision check:", error);
+        }
       }
+    } catch (error) {
+      console.error("Error in checkSaberCollisions:", error);
     }
   }
   

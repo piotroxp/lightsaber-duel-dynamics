@@ -236,49 +236,34 @@ export class Enemy extends Group {
     }, 800);
   }
   
-  takeDamage(amount: number, hitPosition: Vector3): number {
-    // If the enemy is dead, no more damage
-    if (this.state === EnemyState.DEAD) {
-      return 0;
-    }
+  takeDamage(amount: number, attackerPosition?: Vector3): void {
+    console.log(`Enemy taking ${amount} damage, current health: ${this.health}`);
     
-    // If blocking and hit is from the front, reduce damage
-    if (this.blocking) {
-      // Calculate direction from enemy to hit
-      const toHit = new Vector3().subVectors(hitPosition, (this as any).position).normalize();
-      toHit.y = 0; // Only consider xz plane for blocking
-      
-      // Get enemy forward direction
-      const forward = new Vector3(0, 0, 1).applyQuaternion((this as any).quaternion);
-      
-      // If hit from the front (dot product > 0), block reduces damage by 75%
-      const dot = forward.dot(toHit);
-      if (dot > 0.3) { // Blocking angle (about 60 degrees from front)
-        amount *= 0.25; // Reduce damage by 75%
-        
-        // Create a clash effect at the lightsaber position
-        const clashPosition = this.lightsaber.getSaberTipPosition();
-        const sceneParent = this.parent as Scene;
-        createSaberClashEffect(sceneParent, clashPosition, '#ff8800');
-      }
-    }
+    if (this.state === EnemyState.DEAD) return;
     
-    // Apply damage
+    // CRITICAL: Directly reduce health with no conditions
     this.health -= amount;
+    console.log(`Enemy health after damage: ${this.health}`);
     
     // Enter staggered state if hit
-    if (amount > 0 && this.health > 0) {
-      this.staggerTime = 0.3; // Staggered for 0.3 seconds
-      this.state = EnemyState.STAGGERED;
-    }
+    this.state = EnemyState.STAGGERED;
+    this.staggerTime = 0.5;
     
-    // Check for death
+    // Check if dead
     if (this.health <= 0) {
-      this.health = 0;
       this.die();
+      return;
     }
     
-    return amount; // Return actual damage dealt
+    // Visual feedback for hit
+    if (this.scene) {
+      const hitPosition = this.position.clone();
+      hitPosition.y = 1.2;
+      createHitEffect(this.scene, hitPosition, '#ff4444');
+    }
+    
+    // Audio feedback
+    gameAudio.playSound('enemyHit', { volume: 0.8 });
   }
   
   private die(): void {
@@ -577,5 +562,22 @@ export class Enemy extends Group {
   // Add method to access attack timer for combat system
   getAttackTimer(): number {
     return this.attackTimer;
+  }
+
+  // Add missing getLightsaberPosition method to Enemy class
+  getLightsaberPosition(): Vector3 {
+    // If no lightsaber, return position at hand height
+    if (!this.lightsaber) {
+      return this.position.clone().add(new Vector3(0.5, 1.1, 0.3));
+    }
+    
+    // Calculate the position at the tip of the lightsaber blade
+    const saberPos = this.lightsaber.localToWorld(new Vector3(0, 1.4, 0));
+    return saberPos;
+  }
+
+  // Implement missing playLightsaberClashSound method
+  playLightsaberClashSound(): void {
+    gameAudio.playSound('lightsaberClash', { volume: 0.8 });
   }
 }
