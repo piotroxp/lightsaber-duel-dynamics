@@ -191,52 +191,28 @@ export class Lightsaber extends Group {
   }
   
   update(deltaTime: number): void {
-    // Update activation animation
-    if (this.active && this.activationProgress < 1.0) {
-      this.activationProgress += deltaTime * 2; // Fully activate in 0.5 seconds
-      if (this.activationProgress > 1.0) this.activationProgress = 1.0;
-      this.updateBladeVisuals();
-    } else if (!this.active && this.activationProgress > 0.0) {
-      this.activationProgress -= deltaTime * 2; // Fully deactivate in 0.5 seconds
-      if (this.activationProgress < 0.0) this.activationProgress = 0.0;
-      this.updateBladeVisuals();
-    }
-    
-    // Update glow emitter if exists
-    if (this.glowEmitter && this.activationProgress > 0) {
-      // Control emission rate based on activation
-      if (this.activationProgress > 0) {
-        this.glowEmitter.start();
-      } else {
-        this.glowEmitter.stop();
-      }
-    }
-    
-    // Add subtle pulsing effect to the blade
+    // CRITICAL FIX: Force update blade visuals regardless of activation state
     if (this.active) {
-      this.pulseTime += deltaTime * 2;
-      const pulseAmount = Math.sin(this.pulseTime) * 0.1 + 0.9;
+      // Update pulse time
+      this.pulseTime += deltaTime;
       
-      // Apply pulse to blade and core opacity
+      // Calculate pulse factor (0.8 to 1.0 range)
+      const pulseFactor = 0.8 + 0.2 * Math.sin(this.pulseTime * 2);
+      
+      // Force assign materials directly for immediate effect
       if (this.blade.material instanceof MeshBasicMaterial) {
-        this.blade.material.opacity = this.activationProgress * 0.7 * pulseAmount;
+        this.blade.material.opacity = 0.7 * pulseFactor;
       }
-      
       if (this.bladeCore.material instanceof MeshBasicMaterial) {
-        this.bladeCore.material.opacity = this.activationProgress * 1.0 * pulseAmount;
+        this.bladeCore.material.opacity = 0.9 * pulseFactor;
       }
-      
       if (this.plasmaCore.material instanceof MeshBasicMaterial) {
-        this.plasmaCore.material.opacity = this.activationProgress * 1.2 * pulseAmount;
-        
-        // Add random flickering to plasma core for energy effect
-        if (Math.random() > 0.7) {
-          this.plasmaCore.material.opacity *= 0.8 + Math.random() * 0.4;
-        }
+        this.plasmaCore.material.opacity = pulseFactor;
       }
       
-      // Pulse the light intensity too
-      this.bladeLight.intensity = 2 * this.glowIntensity * pulseAmount;
+      // Force light to be visible and pulsing
+      this.bladeLight.visible = true;
+      this.bladeLight.intensity = 2 * this.glowIntensity * pulseFactor;
     }
   }
   
@@ -288,57 +264,24 @@ export class Lightsaber extends Group {
     if (this.active) return;
     
     this.active = true;
+    this.activationProgress = 0;
+    
+    // Make all blade components visible
+    this.blade.visible = true;
+    this.bladeCore.visible = true;
+    this.plasmaCore.visible = true;
+    this.bladeLight.visible = true;
+    this.bladeFlare.visible = true;
     
     // Play activation sound
     gameAudio.playSound('lightsaberOn', { volume: 0.7 });
     
-    // Animate blade appearance
-    const startTime = Date.now();
-    const duration = 300; // ms
-    let progress = 0;
-    
-    const animate = () => {
-      const elapsed = Date.now() - startTime;
-      progress = Math.min(elapsed / duration, 1);
-      
-      // Update blade and cores visibility
-      if (this.blade.material instanceof MeshBasicMaterial) {
-        this.blade.material.opacity = progress * 0.5; // Translucent outer blade
-      }
-      
-      if (this.bladeCore.material instanceof MeshBasicMaterial) {
-        this.bladeCore.material.opacity = progress * 1.2; // Bright core
-      }
-      
-      if (this.plasmaCore.material instanceof MeshBasicMaterial) {
-        this.plasmaCore.material.opacity = progress * 1.5; // Very bright plasma
-      }
-      
-      // Grow blade and cores from hilt
-      this.blade.scale.set(1, progress, 1);
-      this.blade.position.y = this.hiltLength + (this.bladeLength * progress) / 2;
-      
-      this.bladeCore.scale.set(1, progress, 1);
-      this.bladeCore.position.y = this.hiltLength + (this.bladeLength * progress) / 2;
-      
-      this.plasmaCore.scale.set(1, progress, 1);
-      this.plasmaCore.position.y = this.hiltLength + (this.bladeLength * progress) / 2;
-      
-      // Enable light when partially extended
-      if (progress > 0.3 && !this.bladeLight.visible) {
-        this.bladeLight.visible = true;
-      }
-      
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      } else {
-        // When fully activated, play the hum sound
-        gameAudio.playSound('lightsaberHum', { loop: true, volume: 0.3 });
-      }
-    };
-    
-    // Start animation
-    animate();
+    // CRITICAL FIX: Immediately start the glow effect
+    // Apply immediate partial glow to make it visible
+    (this.blade.material as MeshBasicMaterial).opacity = 0.4;
+    (this.bladeCore.material as MeshBasicMaterial).opacity = 0.6;
+    (this.plasmaCore.material as MeshBasicMaterial).opacity = 0.8;
+    this.bladeLight.intensity = 1.0 * this.glowIntensity;
   }
   
   deactivate(): void {
@@ -596,5 +539,59 @@ export class Lightsaber extends Group {
     );
     
     this.isBlocking = false;
+  }
+
+  // Helper methods for color manipulation
+  private getHueFromColor(hexColor: string): number {
+    const r = parseInt(hexColor.slice(1, 3), 16) / 255;
+    const g = parseInt(hexColor.slice(3, 5), 16) / 255;
+    const b = parseInt(hexColor.slice(5, 7), 16) / 255;
+    
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    
+    let h = 0;
+    
+    if (max === min) {
+      h = 0; // achromatic
+    } else {
+      const d = max - min;
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
+      }
+      h /= 6;
+    }
+    
+    return h;
+  }
+
+  private getColorFromHSL(h: number, s: number, l: number): string {
+    let r, g, b;
+
+    if (s === 0) {
+      r = g = b = l; // achromatic
+    } else {
+      const hue2rgb = (p: number, q: number, t: number) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      r = hue2rgb(p, q, h + 1/3);
+      g = hue2rgb(p, q, h);
+      b = hue2rgb(p, q, h - 1/3);
+    }
+
+    return '#' + 
+      Math.round(r * 255).toString(16).padStart(2, '0') +
+      Math.round(g * 255).toString(16).padStart(2, '0') +
+      Math.round(b * 255).toString(16).padStart(2, '0');
   }
 }

@@ -111,14 +111,14 @@ export class GameScene {
       console.log("Player setup complete");
       
       // Add enemies once the player is ready
-      this.setupEnemies();
+      this.createEnemies();
       console.log("Enemies setup complete");
       
       // Mark as initialized
       this.isInitialized = true;
       console.log("Game initialization complete");
       
-      // Start animation loop - add more explicit call here
+      // Start animation loop
       this.animate();
       console.log("Animation loop started");
       
@@ -253,23 +253,29 @@ export class GameScene {
   }
   
   private createEnemies(): void {
-    try {
-      // Create an enemy
-      const enemy = new Enemy(this.scene);
-      
-      // Set the enemy's position
-      enemy.position.set(0, 0, -5);
-      
-      this.scene.add(enemy);
-      this.enemies.push(enemy);
-      
-      // Add enemy to combat system
-      this.combatSystem.addEnemy(enemy);
-      
-      console.log("Enemy created at position:", enemy.position);
-    } catch (error) {
-      console.error("Error creating enemies:", error);
-    }
+    console.log("Setting up enemies");
+    
+    // Clear any existing enemies
+    this.enemies = [];
+    
+    // Create a single enemy for dueling
+    const enemy = new Enemy(this.scene, {
+      health: 100,
+      speed: 2.5,          // Increased speed
+      attackRange: 2.5,
+      attackDamage: 10,
+      lightsaberColor: '#ff0000'
+    });
+    
+    // Position enemy opposite to player
+    enemy.position.set(0, 0, -5);  // Fix Y position to ground level
+    
+    // Add to scene and enemy list
+    this.scene.add(enemy);
+    this.enemies.push(enemy);
+    
+    // CRITICAL: Add the enemy to the combat system
+    this.combatSystem.addEnemy(enemy);
   }
   
   private setupEventListeners(): void {
@@ -297,62 +303,36 @@ export class GameScene {
   }
   
   public animate(): void {
-    if (!this.isInitialized) {
-      console.warn("Tried to animate before initialization");
-      return;
+    if (!this.isAnimating) {
+      this.isAnimating = true;
     }
     
-    console.log("Starting animation loop");
-    this.isAnimating = true;
+    requestAnimationFrame(this.animate.bind(this));
     
-    const animate = () => {
-      if (!this.isAnimating) {
-        console.log("Animation stopped");
-        return;
-      }
-      
-      try {
-        // Get delta time for smooth animations
-        const deltaTime = this.clock.getDelta();
-        
-        // Update player movement if player exists and has update method
-        if (this.player && typeof this.player.update === 'function') {
-          this.player.update(deltaTime);
-        }
-        
-        // Update enemies if they exist and have update method
-        for (const enemy of this.enemies) {
-          if (enemy && typeof enemy.update === 'function') {
-            try {
-              enemy.update(
-                deltaTime, 
-                this.player?.getPosition ? this.player.getPosition() : new Vector3(),
-                this.player?.getDirection ? this.player.getDirection() : new Vector3(0, 0, 1)
-              );
-            } catch (error) {
-              console.warn("Error updating enemy:", error);
-            }
-          }
-        }
-        
-        // Update combat system if it exists and has update method
-        if (this.combatSystem && typeof this.combatSystem.update === 'function') {
-          this.combatSystem.update(deltaTime);
-        }
-        
-        // Render the scene
-        this.renderer.render(this.scene, this.camera);
-      } catch (error) {
-        console.error("Error in animation loop:", error);
-        // Don't stop the loop for errors
-      }
-      
-      // Continue animation loop
-      requestAnimationFrame(animate);
-    };
+    // Get delta time
+    const deltaTime = this.clock.getDelta();
     
-    // Initial call to start the loop
-    animate();
+    // Update player
+    if (this.player) {
+      this.player.update(deltaTime);
+    }
+    
+    // CRITICAL FIX: Update enemies with proper parameters
+    for (const enemy of this.enemies) {
+      if (enemy && typeof enemy.update === 'function') {
+        try {
+          // Explicitly pass player position and direction
+          const playerPos = this.player.getPosition();
+          const playerDir = this.player.getDirection();
+          enemy.update(deltaTime, playerPos, playerDir);
+        } catch (error) {
+          console.warn("Error updating enemy:", error);
+        }
+      }
+    }
+    
+    // Render the scene
+    this.renderer.render(this.scene, this.camera);
   }
   
   unlockControls(): void {
@@ -610,28 +590,5 @@ export class GameScene {
     
     // Additional player setup if needed
     console.log("Player positioned at:", this.player.position);
-  }
-  
-  private setupEnemies(): void {
-    console.log("Setting up enemies");
-    
-    // Clear any existing enemies
-    this.enemies = [];
-    
-    // Create a single enemy for dueling
-    const enemy = new Enemy(this.scene, {
-      health: 100,
-      speed: 2.0,
-      attackRange: 2.5,
-      attackDamage: 10,
-      lightsaberColor: '#ff0000'
-    });
-    
-    // Position enemy opposite to player
-    enemy.position.set(0, 1, -5);
-    
-    // Add to scene and enemy list
-    this.scene.add(enemy);
-    this.enemies.push(enemy);
   }
 }

@@ -96,11 +96,11 @@ export class Enemy extends Group {
   update(deltaTime: number, playerPosition: Vector3, playerDirection: Vector3): void {
     if (!this.isAlive()) return;
     
-    // CRITICAL FIX: Ensure animation and state updates properly
+    // Update enemy animations
     this.updateAnimation(deltaTime);
     
-    // CRITICAL FIX: Force enemy to always run AI update
-    this.updateAI(deltaTime, playerPosition, playerDirection);
+    // IMPROVED: Force aggressive AI behavior
+    this.updateAggressive(deltaTime, playerPosition, playerDirection);
     
     // Update lightsaber
     if (this.lightsaber) {
@@ -108,45 +108,42 @@ export class Enemy extends Group {
     }
   }
   
-  private updateAI(deltaTime: number, playerPosition: Vector3, playerDirection: Vector3): void {
+  // New method to force more aggressive enemy behavior
+  private updateAggressive(deltaTime: number, playerPosition: Vector3, playerDirection: Vector3): void {
     // Skip if dead
     if (this.state === EnemyState.DEAD) return;
     
     // Calculate distance to player
     const distanceToPlayer = this.position.distanceTo(playerPosition);
     
-    // FIXED: Always face the player regardless of distance
+    // Always face the player
     this.lookAt(playerPosition.x, this.position.y, playerPosition.z);
     
-    // Check if we're in active range
-    if (distanceToPlayer <= this.aggroRange) {
-      // FIXED: Move toward player when not in attack range
-      if (distanceToPlayer > this.attackRange) {
-        // Move toward player
-        this.state = EnemyState.PURSUING;
-        const moveSpeed = this.speed * deltaTime;
-        const moveDirection = new Vector3()
-          .subVectors(playerPosition, this.position)
-          .normalize();
-        moveDirection.y = 0; // Keep on ground plane
-        
-        // CRITICAL FIX: Ensure movement is applied
-        this.position.add(moveDirection.multiplyScalar(moveSpeed));
-      } 
-      // When in attack range, occasionally attack
-      else if (distanceToPlayer <= this.attackRange) {
-        // Get current time for cooldown check
-        const currentTime = performance.now() / 1000;
-        
-        // FIXED: Ensure attack cooldown is checked and is reasonable
-        if (currentTime - this.lastAttackTime > 2.0 && Math.random() > 0.7) {
-          // CRITICAL FIX: Force attack to happen
-          this.attack();
-          this.lastAttackTime = currentTime;
-        } else {
-          // Strafe around player when not attacking
-          this.strafeAroundTarget(deltaTime, playerPosition);
-        }
+    // IMPROVED: Always pursue player when beyond attack range
+    if (distanceToPlayer > this.attackRange) {
+      // Move directly toward player at full speed
+      const moveSpeed = this.speed * deltaTime;
+      const moveDirection = new Vector3()
+        .subVectors(playerPosition, this.position)
+        .normalize();
+      moveDirection.y = 0;
+      
+      // Apply movement
+      this.position.add(moveDirection.multiplyScalar(moveSpeed));
+      this.state = EnemyState.PURSUING;
+    } 
+    // IMPROVED: Attack frequently when in range
+    else {
+      // Get current time for cooldown
+      const currentTime = performance.now() / 1000;
+      
+      // Attack more frequently (1 second cooldown)
+      if (currentTime - this.lastAttackTime > 1.0) {
+        this.attack();
+        this.lastAttackTime = currentTime;
+      } else {
+        // Strafe around player between attacks for dynamic movement
+        this.strafeAroundTarget(deltaTime, playerPosition);
       }
     }
   }
