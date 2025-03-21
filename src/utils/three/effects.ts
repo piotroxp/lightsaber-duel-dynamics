@@ -1,4 +1,3 @@
-
 import { 
   Group, 
   Mesh, 
@@ -138,6 +137,20 @@ export class ParticleEmitter extends Group {
       }
     }
   }
+
+  setEmissionRate(rate: number): void {
+    // Adjust how many particles are visible based on the rate
+    const visibleCount = Math.round(this.options.count * rate);
+    
+    for (let i = 0; i < this.particles.length; i++) {
+      // Show particles up to the visible count
+      if (i < visibleCount) {
+        this.particles[i].visible = true;
+      } else {
+        this.particles[i].visible = false;
+      }
+    }
+  }
 }
 
 // Create a simple hit effect
@@ -203,4 +216,24 @@ export function createSaberClashEffect(scene: Scene, position: Vector3, color: s
     scene.remove(emitter);
     scene.remove(flashEmitter);
   }, 500);
+}
+
+// Add enhanced glow method for lightsabers
+export function createLightsaberGlow(scene: Scene, position: Vector3, color: string = '#3366ff'): ParticleEmitter {
+  const colorValue = color.startsWith('#') ? parseInt(color.replace('#', '0x')) : 0x3366ff;
+  
+  const emitter = new ParticleEmitter({
+    count: 30,
+    size: 0.02,
+    color: colorValue,
+    lifetime: 0.3,
+    speed: 0.05,
+    direction: new Vector3(0, 0, 0),
+    spread: 0.2
+  });
+  
+  emitter.position.copy(position);
+  scene.add(emitter);
+  
+  return emitter;
 }
