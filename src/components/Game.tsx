@@ -126,6 +126,29 @@ const Game: React.FC = () => {
   
   const handleGameStart = useCallback(() => {
     console.log("Game start triggered");
+    
+    if (!gameSceneRef.current) {
+      console.error("Game scene is not initialized, attempting to reinitialize...");
+      // Try to reinitialize the scene
+      initializeGame().then(() => {
+        // After initialization, retry starting the game if successful
+        if (gameSceneRef.current) {
+          console.log("Reinitialization successful, starting game...");
+          startGameWithScene(gameSceneRef.current);
+        } else {
+          console.error("Failed to reinitialize game scene");
+          toast.error("Failed to start game. Please refresh the page.");
+        }
+      });
+      return;
+    }
+    
+    // If we have a valid game scene, start the game
+    startGameWithScene(gameSceneRef.current);
+  }, []);
+  
+  // Separate function to start the game with a valid scene
+  const startGameWithScene = (gameScene: GameScene) => {
     setGameState(prev => ({
       ...prev,
       isStarted: true
@@ -135,19 +158,14 @@ const Game: React.FC = () => {
     try {
       gameAudio.resumeAudio();
       
-      if (gameSceneRef.current) {
-        console.log("Starting game elements...");
-        gameSceneRef.current.startBackgroundMusic();
-        gameSceneRef.current.lockControls();
-      } else {
-        console.error("Game scene not available at start");
-        toast.error("Game scene not fully initialized. Try refreshing the page.");
-      }
+      console.log("Starting game elements...");
+      gameScene.startBackgroundMusic();
+      gameScene.lockControls();
     } catch (error) {
       console.error("Error starting game:", error);
       toast.error("Error starting game. You may experience issues with audio or controls.");
     }
-  }, []);
+  };
   
   const handleRetryLoading = useCallback(() => {
     console.log("Manually retrying game initialization");
@@ -216,8 +234,13 @@ const Game: React.FC = () => {
           isLoaded={gameState.loadingProgress >= 0.95}
           onStart={() => {
             console.log("Start game from loading screen");
-            setGameState(prev => ({ ...prev, isLoading: false }));
-            handleGameStart();
+            if (gameSceneRef.current) {
+              setGameState(prev => ({ ...prev, isLoading: false }));
+              startGameWithScene(gameSceneRef.current);
+            } else {
+              console.error("Cannot start game: scene not initialized");
+              toast.error("Game not fully loaded. Please wait or refresh the page.");
+            }
           }}
           onSkip={() => {
             console.log("Skipping loading screen");

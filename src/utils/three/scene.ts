@@ -446,16 +446,28 @@ export class GameScene {
   }
   
   lockControls(): void {
-    if (this.controls && !this.controls.isLocked) {
-      this.controls.lock();
+    try {
+      console.log("Locking controls...");
+      if (this.controls) {
+        this.controls.lock();
+      } else {
+        console.warn("Controls not available");
+      }
+    } catch (error) {
+      console.error("Failed to lock controls:", error);
     }
   }
   
   startBackgroundMusic(): void {
-    this.backgroundMusic = gameAudio.playSound('backgroundMusic', {
-      loop: true,
-      volume: 0.3
-    });
+    try {
+      console.log("Starting background music...");
+      this.backgroundMusic = gameAudio.playSound('backgroundMusic', {
+        loop: true,
+        volume: 0.5
+      });
+    } catch (error) {
+      console.error("Failed to start background music:", error);
+    }
   }
   
   stopBackgroundMusic(): void {
@@ -466,21 +478,43 @@ export class GameScene {
   }
   
   cleanup(): void {
-    // Stop animation loop
-    cancelAnimationFrame(this.animate as any);
-    
-    // Stop audio
-    this.stopBackgroundMusic();
-    gameAudio.stopAll();
-    
-    // Remove event listeners
-    window.removeEventListener('resize', this.onWindowResize.bind(this));
-    
-    // Remove renderer
-    this.container.removeChild(this.renderer.domElement);
-    
-    // Dispose of resources
-    this.renderer.dispose();
+    try {
+      console.log("Cleaning up game scene...");
+      // Stop animation loop
+      if (this.isAnimating) {
+        this.isAnimating = false;
+      }
+      
+      // Clean up audio
+      gameAudio.stopAll();
+      
+      // Dispose of all materials and geometries
+      this.scene.traverse((object) => {
+        if (object instanceof Mesh) {
+          object.geometry.dispose();
+          if (Array.isArray(object.material)) {
+            object.material.forEach(material => material.dispose());
+          } else {
+            object.material.dispose();
+          }
+        }
+      });
+      
+      // Clean up renderer
+      this.renderer.dispose();
+      
+      // Remove renderer from DOM
+      if (this.container.contains(this.renderer.domElement)) {
+        this.container.removeChild(this.renderer.domElement);
+      }
+      
+      // Clean up event listeners
+      window.removeEventListener('resize', this.onWindowResize.bind(this));
+      
+      console.log("Game scene cleanup complete");
+    } catch (error) {
+      console.error("Error during cleanup:", error);
+    }
   }
   
   getPlayer(): Player {
