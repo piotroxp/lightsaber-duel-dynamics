@@ -6,7 +6,8 @@ import {
   SphereGeometry, 
   Vector3, 
   Color,
-  AdditiveBlending
+  AdditiveBlending,
+  Scene
 } from 'three';
 
 interface ParticleOptions {
@@ -140,11 +141,13 @@ export class ParticleEmitter extends Group {
 }
 
 // Create a simple hit effect
-export function createHitEffect(position: Vector3, scene: any): void {
+export function createHitEffect(scene: Scene, position: Vector3, color: string = '#ff0000'): void {
+  const colorValue = color.startsWith('#') ? parseInt(color.replace('#', '0x')) : 0xff0000;
+  
   const emitter = new ParticleEmitter({
     count: 20,
     size: 0.05,
-    color: 0xff0000,
+    color: colorValue,
     lifetime: 0.5,
     speed: 2,
     direction: new Vector3(0, 1, 0),
@@ -162,23 +165,42 @@ export function createHitEffect(position: Vector3, scene: any): void {
 }
 
 // Create a lightsaber clash effect
-export function createSaberClashEffect(position: Vector3, scene: any): void {
+export function createSaberClashEffect(scene: Scene, position: Vector3, color: string = '#ffff00'): void {
+  const colorValue = color.startsWith('#') ? parseInt(color.replace('#', '0x')) : 0xffff00;
+  
+  // Main sparks
   const emitter = new ParticleEmitter({
-    count: 30,
-    size: 0.03,
-    color: 0xffff00,
-    lifetime: 0.3,
-    speed: 3,
+    count: 40,
+    size: 0.035,
+    color: colorValue,
+    lifetime: 0.4,
+    speed: 4,
     direction: new Vector3(0, 0, 0),
-    spread: 1
+    spread: 1.2
   });
   
   emitter.position.copy(position);
   scene.add(emitter);
   emitter.start();
   
+  // White flash core
+  const flashEmitter = new ParticleEmitter({
+    count: 15,
+    size: 0.05,
+    color: 0xffffff,
+    lifetime: 0.2,
+    speed: 2,
+    direction: new Vector3(0, 0, 0),
+    spread: 0.8
+  });
+  
+  flashEmitter.position.copy(position);
+  scene.add(flashEmitter);
+  flashEmitter.start();
+  
   // Remove after effect is done
   setTimeout(() => {
     scene.remove(emitter);
-  }, 300);
+    scene.remove(flashEmitter);
+  }, 500);
 }

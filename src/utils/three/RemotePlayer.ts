@@ -1,8 +1,9 @@
+
 import { Group, Vector3, Quaternion, Mesh, BoxGeometry, MeshBasicMaterial, CylinderGeometry, MeshStandardMaterial, Scene, Object3D } from 'three';
 import { Lightsaber } from './lightsaber';
 
 export class RemotePlayer extends Group {
-  private id: string;
+  private playerId: string;
   private scene: Scene;
   private lightsaber: Lightsaber;
   private health: number = 100;
@@ -17,7 +18,7 @@ export class RemotePlayer extends Group {
   constructor(scene: Scene, id: string) {
     super();
     
-    this.id = id;
+    this.playerId = id;
     this.scene = scene;
     
     // Create body
@@ -69,7 +70,7 @@ export class RemotePlayer extends Group {
     // Update visual state based on actions
     if (this.isAttacking) {
       // Show attack animation
-      this.lightsaber.attack();
+      this.lightsaber.swing();
     }
     
     if (this.isBlocking) {
@@ -121,6 +122,6 @@ export class RemotePlayer extends Group {
   }
   
   public getId(): string {
-    return this.id;
+    return this.playerId;
   }
-} 
+}

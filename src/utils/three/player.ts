@@ -1,4 +1,3 @@
-
 import { 
   Group, 
   Vector3, 
@@ -59,8 +58,12 @@ export class Player extends Group {
       this.add(playerMarker);
     }
     
-    // Create lightsaber
-    this.lightsaber = new Lightsaber('blue');
+    // Create lightsaber with proper options object
+    this.lightsaber = new Lightsaber({
+      color: '#3366ff', // Blue color
+      bladeLength: 1.2,
+      hiltLength: 0.2
+    });
     this.lightsaber.position.set(0.4, -0.3, -0.5); // Position relative to camera
     this.camera.add(this.lightsaber);
     
@@ -197,7 +200,7 @@ export class Player extends Group {
     this.lastAttackTime = currentTime;
     this.state = PlayerState.ATTACKING;
     
-    // Swing lightsaber
+    // Swing lightsaber using the enhanced swing method
     this.lightsaber.swing();
     
     // Reset state after attack
@@ -213,7 +216,7 @@ export class Player extends Group {
     
     this.state = PlayerState.BLOCKING;
     
-    // Block with lightsaber
+    // Block with lightsaber using the block method
     this.lightsaber.block();
     
     // Reset state when block button released

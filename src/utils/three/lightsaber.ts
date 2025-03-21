@@ -1,3 +1,4 @@
+
 import { Group, Vector3, Mesh, CylinderGeometry, MeshStandardMaterial, MeshBasicMaterial, Color, AdditiveBlending, SpotLight, Object3D, PointLight } from 'three';
 import { ParticleEmitter } from './effects';
 import gameAudio from './audio';
@@ -18,6 +19,7 @@ export class Lightsaber extends Group {
   private activationProgress: number = 0;
   private hilt: Mesh;
   private blade: Mesh;
+  private bladeCore: Mesh; // New white core
   private bladeLight: PointLight;
   private glowEmitter: ParticleEmitter | null = null;
   private isSwinging: boolean = false;
@@ -44,8 +46,8 @@ export class Lightsaber extends Group {
     this.hilt.position.y = this.hiltLength / 2;
     this.add(this.hilt);
     
-    // Create blade (initially invisible)
-    const bladeGeometry = new CylinderGeometry(0.02, 0.01, this.bladeLength, 16);
+    // Create blade (colored outer glow)
+    const bladeGeometry = new CylinderGeometry(0.025, 0.015, this.bladeLength, 16);
     const bladeMaterial = new MeshBasicMaterial({
       color: new Color(this.bladeColor),
       transparent: true,
@@ -55,6 +57,18 @@ export class Lightsaber extends Group {
     this.blade = new Mesh(bladeGeometry, bladeMaterial);
     this.blade.position.y = this.hiltLength + this.bladeLength / 2;
     this.add(this.blade);
+    
+    // Create inner white core blade
+    const coreGeometry = new CylinderGeometry(0.015, 0.008, this.bladeLength * 0.98, 16);
+    const coreMaterial = new MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      blending: AdditiveBlending
+    });
+    this.bladeCore = new Mesh(coreGeometry, coreMaterial);
+    this.bladeCore.position.y = this.hiltLength + this.bladeLength / 2;
+    this.add(this.bladeCore);
     
     // Create light for blade glow
     this.bladeLight = new PointLight(this.bladeColor, 1, 2);
@@ -78,12 +92,12 @@ export class Lightsaber extends Group {
   createGlowEmitter(): void {
     // Create particle emitter for blade glow
     this.glowEmitter = new ParticleEmitter({
-      maxParticles: 50,
-      particleSize: 0.05,
-      particleColor: this.bladeColor,
-      emissionRate: 20,
-      particleLifetime: 0.5,
-      gravity: new Vector3(0, 0, 0),
+      count: 50,
+      size: 0.05,
+      color: parseInt(this.bladeColor.replace('#', '0x')),
+      lifetime: 0.5,
+      speed: 0.5,
+      direction: new Vector3(0, 0, 0),
       spread: 0.05
     });
     
@@ -106,19 +120,31 @@ export class Lightsaber extends Group {
     
     // Update glow emitter if exists
     if (this.glowEmitter && this.activationProgress > 0) {
-      const emissionRate = 20 * this.activationProgress;
-      this.glowEmitter.setActive(emissionRate > 0);
+      // Control emission rate based on activation
+      if (this.activationProgress > 0) {
+        this.glowEmitter.start();
+      } else {
+        this.glowEmitter.stop();
+      }
     }
   }
   
   private updateBladeVisuals(): void {
     // Update blade material
     const bladeMaterial = this.blade.material as MeshBasicMaterial;
-    bladeMaterial.opacity = this.activationProgress * 0.8;
+    bladeMaterial.opacity = this.activationProgress * 0.7;
+    
+    // Update core material
+    const coreMaterial = this.bladeCore.material as MeshBasicMaterial;
+    coreMaterial.opacity = this.activationProgress * 0.9;
     
     // Scale blade based on activation progress
     this.blade.scale.y = this.activationProgress;
     this.blade.position.y = this.hiltLength + (this.bladeLength * this.activationProgress) / 2;
+    
+    // Scale core based on activation progress
+    this.bladeCore.scale.y = this.activationProgress;
+    this.bladeCore.position.y = this.hiltLength + (this.bladeLength * this.activationProgress) / 2;
     
     // Update light intensity
     this.bladeLight.visible = this.activationProgress > 0;
@@ -278,13 +304,15 @@ export class Lightsaber extends Group {
       const elapsed = Date.now() - startTime;
       progress = Math.min(elapsed / duration, 1);
       
-      // Swing motion - adjust these values for desired swing effect
+      // Diagonal swing motion from top-right to bottom-left
       if (progress < 0.5) {
-        // Forward swing
-        this.rotation.z = originalRotation.z - Math.sin(progress * Math.PI) * 1.2;
+        // Forward swing - diagonal motion
+        this.rotation.z = originalRotation.z - Math.sin(progress * Math.PI) * 1.0;
+        this.rotation.x = originalRotation.x + Math.sin(progress * Math.PI) * 0.8;
       } else {
-        // Return swing
-        this.rotation.z = originalRotation.z - Math.sin((1 - progress) * Math.PI) * 0.5;
+        // Return swing - smoother return
+        this.rotation.z = originalRotation.z - Math.sin((1 - progress) * Math.PI) * 0.4;
+        this.rotation.x = originalRotation.x + Math.sin((1 - progress) * Math.PI) * 0.3;
       }
       
       if (progress < 1) {
