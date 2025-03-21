@@ -46,6 +46,15 @@ const Game: React.FC = () => {
   });
   
   const initializeGame = async (multiplayer: boolean = false) => {
+    // Reset states at start
+    setGameState(prev => ({ 
+      ...prev, 
+      isLoading: true,
+      loadingProgress: 0 
+    }));
+    
+    console.log("Initialize game called", { multiplayer });
+
     if (containerRef.current) {
       console.log(`Initializing ${multiplayer ? 'multiplayer' : 'single-player'} game scene...`);
       
@@ -55,13 +64,20 @@ const Game: React.FC = () => {
       };
       
       const onLoadComplete = () => {
-        console.log("Loading complete!");
+        console.log("Loading complete callback triggered!");
+        // Add a small timeout to ensure UI updates properly
         setTimeout(() => {
           setGameState(prev => ({ ...prev, isLoading: false }));
         }, 1000);
       };
       
       try {
+        // Remove any previous game scene
+        if (gameSceneRef.current) {
+          gameSceneRef.current.cleanup();
+          gameSceneRef.current = null;
+        }
+        
         const gameScene = new GameScene(
           containerRef.current,
           onLoadProgress,

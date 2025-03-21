@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 
@@ -6,12 +5,14 @@ interface LoadingScreenProps {
   progress: number;
   isLoaded: boolean;
   onStart: () => void;
+  onSkip: () => void;
 }
 
 const LoadingScreen: React.FC<LoadingScreenProps> = ({ 
   progress, 
   isLoaded, 
-  onStart 
+  onStart,
+  onSkip
 }) => {
   const [showTip, setShowTip] = useState(0);
   const [showStartButton, setShowStartButton] = useState(false);
@@ -39,69 +40,27 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
   }, [isLoaded, tips.length]);
   
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center bg-gray-900 z-50">
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="text-center"
-      >
-        <div className="mb-8 relative flex flex-col items-center">
-          {/* Lightsaber hilt */}
-          <div className="w-6 h-20 bg-gray-300 rounded-b-md mb-2"></div>
-          
-          {/* Lightsaber blade */}
-          <motion.div 
-            initial={{ height: 0 }}
-            animate={{ height: progress * 300 }}
-            className="w-4 relative"
-            style={{ height: `${progress * 300}px` }}
-          >
-            <div className="absolute inset-0 bg-blue-500 rounded-t-md"></div>
-            <div className="absolute inset-0 bg-blue-300 rounded-t-md blur-md opacity-70"></div>
-          </motion.div>
-        </div>
-        
-        <h1 className="text-3xl font-bold mb-6 text-white">
-          Lightsaber Duel
-        </h1>
-        
-        <div className="w-64 h-2 bg-gray-700 rounded-full mb-8 overflow-hidden">
-          <motion.div 
-            className="h-full bg-blue-500"
-            initial={{ width: "0%" }}
-            animate={{ width: `${Math.max(5, progress * 100)}%` }}
-            transition={{ duration: 0.3 }}
+    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-50">
+      <div className="text-center space-y-6">
+        <h1 className="text-5xl font-bold text-blue-500">Lightsaber Duel</h1>
+        <div className="w-64 h-2 bg-gray-800 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-blue-500 transition-all duration-300 ease-out"
+            style={{ width: `${Math.max(5, progress * 100)}%` }} // Minimum 5% width for visibility
           />
         </div>
+        <p className="text-gray-300 text-xl">{Math.floor(progress * 100)}%</p>
         
-        <motion.div
-          key={showTip}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          transition={{ duration: 0.5 }}
-          className="text-gray-400 text-center max-w-xs mb-8"
-        >
-          {tips[showTip]}
-        </motion.div>
-        
-        {showStartButton && (
-          <motion.button 
-            className="px-8 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5 }}
-            onClick={onStart}
+        {/* Add a skip button in case loading gets stuck */}
+        {progress > 0.1 && progress < 0.99 && (
+          <button 
+            onClick={onSkip} 
+            className="mt-8 px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700"
           >
-            Start Game
-          </motion.button>
+            Skip Loading
+          </button>
         )}
-        
-        {!showStartButton && (
-          <div className="text-blue-300">Loading... {Math.round(progress * 100)}%</div>
-        )}
-      </motion.div>
+      </div>
     </div>
   );
 };

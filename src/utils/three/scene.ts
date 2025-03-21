@@ -111,46 +111,63 @@ export class GameScene {
       console.log("Starting initialization");
       
       try {
-        // Setup lighting
-        this.onLoadProgress(0.2);
-        console.log("Setting up lighting...");
-        this.setupLighting();
-        
-        // Create environment
-        this.onLoadProgress(0.4);
-        console.log("Creating environment...");
-        this.createEnvironment();
-        
-        // Add debug elements
-        this.onLoadProgress(0.6);
-        console.log("Adding debug elements...");
-        this.addDebugElements(true); // Always add enhanced debug elements
-        
-        // Create enemies
-        this.onLoadProgress(0.8);
-        console.log("Creating enemies...");
-        this.createEnemies();
-        
-        // Start animation loop
-        this.onLoadProgress(0.9);
-        console.log("Starting animation loop...");
-        this.animate();
-        
+        // Add a delay at the start to ensure DOM is ready
+        setTimeout(() => {
+          this.initializeWithProgress(resolve, timeout);
+        }, 100);
+      } catch (error) {
+        console.error("Initialization failed:", error);
+        clearTimeout(timeout);
+        this.isInitialized = true;
+        if (this.onLoadComplete) this.onLoadComplete();
+        resolve(); // Resolve anyway to prevent stuck loading
+      }
+    });
+  }
+  
+  private async initializeWithProgress(resolve: () => void, timeout: NodeJS.Timeout): Promise<void> {
+    try {
+      // Setup lighting
+      console.log("Setting up lighting...");
+      this.setupLighting();
+      this.onLoadProgress(0.2);
+      
+      // Create environment
+      console.log("Creating environment...");
+      this.createEnvironment();
+      this.onLoadProgress(0.4);
+      
+      // Add debug elements
+      console.log("Adding debug elements...");
+      this.addDebugElements(true);
+      this.onLoadProgress(0.6);
+      
+      // Create enemies
+      console.log("Creating enemies...");
+      this.createEnemies();
+      this.onLoadProgress(0.8);
+      
+      // Start animation loop
+      console.log("Starting animation loop...");
+      this.animate();
+      this.onLoadProgress(0.9);
+      
+      // Allow a small delay before completing
+      setTimeout(() => {
         clearTimeout(timeout);
         this.isInitialized = true;
         this.onLoadProgress(1.0);
-        if (this.onLoadComplete) this.onLoadComplete();
-        console.log("Scene initialization complete");
-        resolve();
-      } catch (error) {
-        clearTimeout(timeout);
-        console.error('Failed to initialize scene:', error);
-        // Still resolve to prevent game from getting stuck
-        this.isInitialized = true;
+        console.log("Initialization complete!");
         if (this.onLoadComplete) this.onLoadComplete();
         resolve();
-      }
-    });
+      }, 500);
+    } catch (error) {
+      console.error("Error during initialization:", error);
+      clearTimeout(timeout);
+      this.isInitialized = true;
+      if (this.onLoadComplete) this.onLoadComplete();
+      resolve(); // Resolve anyway to prevent stuck loading
+    }
   }
   
   private async loadAssets(): Promise<boolean> {

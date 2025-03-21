@@ -1,4 +1,3 @@
-
 import { Audio, AudioListener, AudioLoader, PositionalAudio } from 'three';
 
 interface SoundOptions {
@@ -21,23 +20,42 @@ class GameAudio {
   private resumeAudioContext: () => void = () => {};
 
   async initialize(onProgress?: (progress: number) => void): Promise<void> {
-    // Create audio listener
-    this.listener = new AudioListener();
-    this.isInitialized = true;
-
-    // Create audio context
-    try {
-      this.audioContext = new AudioContext();
+    return new Promise<void>((resolve) => {
+      // Set timeout to resolve even if audio loading hangs
+      const timeoutId = setTimeout(() => {
+        console.warn('Audio initialization timed out - continuing anyway');
+        resolve();
+      }, 5000);
       
-      // Add event listeners to resume AudioContext on user interaction
-      // This is needed because browsers require user interaction to start audio
-      this.setupAudioContextResumeListeners();
-    } catch (e) {
-      console.error('Web Audio API is not supported in this browser', e);
-    }
+      try {
+        // Create audio listener
+        this.listener = new AudioListener();
+        this.isInitialized = true;
 
-    // Load sounds
-    await this.loadSounds(onProgress);
+        // Create audio context
+        try {
+          this.audioContext = new AudioContext();
+          
+          // Add event listeners to resume AudioContext on user interaction
+          // This is needed because browsers require user interaction to start audio
+          this.setupAudioContextResumeListeners();
+        } catch (e) {
+          console.error('Web Audio API is not supported in this browser', e);
+        }
+
+        // Load sounds
+        this.loadSounds(onProgress);
+        
+        // When complete, clear timeout and resolve
+        clearTimeout(timeoutId);
+        resolve();
+      } catch (error) {
+        console.error('Audio initialization failed:', error);
+        // Still resolve to prevent game from getting stuck
+        clearTimeout(timeoutId);
+        resolve();
+      }
+    });
   }
 
   private setupAudioContextResumeListeners(): void {
