@@ -596,7 +596,7 @@ export class Lightsaber extends Group {
   }
 
   // Add method to swing at a specific target
-  swingAt(type: number, targetDirection: Vector3): void {
+  swingAt(targetDirection: Vector3): void {
     if (!this.active || this.isSwinging) return;
     
     this.isSwinging = true;
@@ -614,15 +614,15 @@ export class Lightsaber extends Group {
       z: this.position.z
     };
     
-    // Determine swing axis based on swing type and target direction
-    let swingAxis = new Vector3(0, 1, 0); // Default vertical axis
+    // Determine swing direction from target
+    let movementDirection: 'left' | 'right' | 'forward' | 'none' = 'forward';
     
-    if (type === 0) { // Horizontal swing - use up/down axis
-      swingAxis = new Vector3(0, 1, 0);
-    } else if (type === 1) { // Vertical swing - use left/right axis
-      swingAxis = new Vector3(1, 0, 0);
-    } else { // Diagonal swing - use diagonal axis
-      swingAxis = new Vector3(1, 1, 0).normalize();
+    // Calculate direction based on target position
+    // Check if target is more to the left or right
+    if (targetDirection.x < -0.3) {
+      movementDirection = 'left';
+    } else if (targetDirection.x > 0.3) {
+      movementDirection = 'right';
     }
     
     // Adjust swing direction to point toward target
@@ -632,7 +632,7 @@ export class Lightsaber extends Group {
     // Play swing sound
     gameAudio.playSound('lightsaberSwing', { volume: 0.5 });
     
-    // Use existing swing animation but with adjusted starting rotation
-    this.swing(type);
+    // Use existing swing animation with the determined direction
+    this.swing(movementDirection);
   }
 }

@@ -1,4 +1,3 @@
-
 import { Scene, Raycaster, Vector3, Mesh, Group, Object3D, Camera } from 'three';
 import { Player } from './player';
 import { Enemy } from './enemy';
@@ -40,7 +39,7 @@ export class CombatSystem {
     // CRITICAL: Force enemy to swing lightsaber and deal damage
     for (const enemy of this.enemies) {
       if (enemy.isAlive() && enemy.isAttacking()) {
-        if (!enemy.hasAppliedDamage && enemy.getAttackTimer() > 0.2) {
+        if (!enemy.getHasAppliedDamage() && enemy.getAttackTimer() > 0.2) {
           // Apply damage only once during attack animation at the right moment
           const playerPos = this.player.getPosition();
           const enemyPos = enemy.getPosition();
@@ -67,12 +66,12 @@ export class CombatSystem {
             }
             
             // Mark damage as applied for this attack
-            enemy.hasAppliedDamage = true;
+            enemy.setHasAppliedDamage(true);
           }
         }
       } else {
         // Reset damage flag when not attacking
-        enemy.hasAppliedDamage = false;
+        enemy.setHasAppliedDamage(false);
       }
     }
   }
@@ -168,7 +167,7 @@ export class CombatSystem {
     for (const enemy of this.enemies) {
       if (!enemy.isAlive()) continue;
       
-      const enemySaberTip = enemy.getLightsaberPosition();
+      const enemySaberTip = enemy.getSaberTipPosition();
       
       // Calculate distance between sabers
       const saberDistance = playerSaberTip.distanceTo(enemySaberTip);

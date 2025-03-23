@@ -547,4 +547,18 @@ export class Enemy extends Group {
   getAttackTimer(): number {
     return this.attackTimer;
   }
+
+  // Add accessors for hasAppliedDamage
+  getHasAppliedDamage(): boolean {
+    return this.hasAppliedDamage;
+  }
+  
+  setHasAppliedDamage(value: boolean): void {
+    this.hasAppliedDamage = value;
+  }
+
+  // Add missing getLightsaberPosition for compatibility
+  getLightsaberPosition(): Vector3 {
+    return this.getSaberTipPosition();
+  }
 }
