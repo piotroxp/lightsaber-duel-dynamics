@@ -294,6 +294,13 @@ export class Player extends Group {
     this.health = Math.max(0, this.health - amount);
     console.log(`[PLAYER] Health after damage: ${this.health}`);
     
+    // CRITICAL: Dispatch event for health change
+    this.dispatchEvent({
+      type: 'healthChanged',
+      health: this.health,
+      maxHealth: 100
+    });
+    
     // Create visual effect
     this.createDamageEffect();
     

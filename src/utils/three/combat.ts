@@ -33,8 +33,6 @@ export class CombatSystem {
   }
   
   update(deltaTime: number): void {
-    console.log("COMBAT SYSTEM UPDATE CALLED");
-    
     // Player attack debug
     if (this.player.isAttacking()) {
       console.log("👊 PLAYER IS ATTACKING");
@@ -42,21 +40,21 @@ export class CombatSystem {
       for (const enemy of this.enemies) {
         if (!enemy.isAlive()) continue;
         
-        // SIMPLIFIED: Use more reliable hit detection with fixed distance
+        // SIMPLIFIED: Use reliable hit detection with fixed distance
         const playerPos = this.player.getPosition();
         const hitDistance = enemy.position.distanceTo(playerPos);
         
         console.log("⚔️ Distance to enemy:", hitDistance.toFixed(2));
         
-        // Very generous hit detection - almost guaranteed to hit
+        // Very generous hit detection
         if (hitDistance < 6.0) {
           console.log("🎯 DIRECT HIT DETECTED!");
           
           // Debug BEFORE damage
           console.log("Enemy health BEFORE damage:", enemy.getHealth());
           
-          // Apply damage directly
-          enemy.takeDamage(25, playerPos);
+          // CRITICAL: Reduce damage to require at least 5 hits
+          enemy.takeDamage(20, playerPos);
           
           // Debug AFTER damage
           console.log("Enemy health AFTER damage:", enemy.getHealth());
@@ -65,12 +63,15 @@ export class CombatSystem {
           createHitEffect(this.scene, enemy.position.clone().add(new Vector3(0, 1.2, 0)), '#ff0000');
           gameAudio.playSound('enemyHit', { volume: 1.0 });
           
+          // Add cooldown to prevent multiple hits in one swing
+          this.lastHitTime = performance.now() / 1000;
+          
           break;
         }
       }
     }
     
-    // SIMPLIFIED: Enemy attack detection
+    // ENEMY ATTACK DETECTION - Fix to ensure enemy can damage player
     for (const enemy of this.enemies) {
       if (!enemy.isAlive() || !enemy.isAttacking()) continue;
       
@@ -83,16 +84,28 @@ export class CombatSystem {
         
         console.log("⚔️ Distance to player:", hitDistance.toFixed(2));
         
-        // More generous hit range
-        if (hitDistance < 5.0) {
+        // CRITICAL: Ensure enemy attacks land at reasonable distance
+        if (hitDistance < 3.0) {
           console.log("🎯 PLAYER HIT BY ENEMY!");
           
-          // Direct damage application
-          this.player.takeDamage(enemy.getAttackDamage(), enemy.getPosition());
+          // Debug player health before damage
+          console.log("Player health BEFORE damage:", this.player.getHealth());
           
-          // Visuals and audio
+          // CRITICAL: Ensure enemy damage is applied properly
+          const damage = enemy.getAttackDamage();
+          console.log(`Enemy dealing ${damage} damage to player`);
+          this.player.takeDamage(damage, enemy.getPosition());
+          
+          // Debug player health after damage
+          console.log("Player health AFTER damage:", this.player.getHealth());
+          
+          // Visual and audio feedback
           createHitEffect(this.scene, playerPos.clone().add(new Vector3(0, 1.2, 0)), '#ff0000');
           gameAudio.playSound('playerHit', { volume: 1.0 });
+          this.applyCameraShake(0.4);
+          
+          // Add cooldown to prevent multiple hits
+          enemy.setAttackCooldown(1.5);
           break;
         }
       }

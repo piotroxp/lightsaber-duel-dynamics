@@ -66,6 +66,10 @@ export class Enemy extends Group {
   
   private scene: Scene;
   
+  private isRespawning: boolean = false;
+  private respawnTimer: number = 0;
+  private respawnDelay: number = 5; // 5 seconds to respawn
+  
   constructor(scene: Scene, options: EnemyOptions = {}) {
     super();
     
@@ -107,7 +111,41 @@ export class Enemy extends Group {
   }
   
   update(deltaTime: number, playerPosition: Vector3, playerDirection: Vector3): void {
-    if (!this.isAlive()) return;
+    // Skip update if dead
+    if (this.state === EnemyState.DEAD) {
+      // Handle respawn logic
+      if (!this.isRespawning) {
+        console.log("Enemy dead, starting respawn timer");
+        this.isRespawning = true;
+        this.respawnTimer = 0;
+      } else {
+        // Count up respawn timer
+        this.respawnTimer += deltaTime;
+        
+        // Check if it's time to respawn
+        if (this.respawnTimer >= this.respawnDelay) {
+          console.log("Enemy respawning!");
+          this.respawn();
+        }
+      }
+      return;
+    }
+    
+    // Process attack cooldown
+    if (this.attackCooldown > 0) {
+      this.attackCooldown -= deltaTime;
+    }
+    
+    // Process attack timer
+    if (this.state === EnemyState.ATTACKING) {
+      this.attackTimer += deltaTime;
+      
+      // End attack after animation time
+      if (this.attackTimer > 1.0) {
+        this.attackTimer = 0;
+        this.state = EnemyState.IDLE;
+      }
+    }
     
     // Update enemy animations
     this.updateAnimation(deltaTime);
@@ -245,9 +283,12 @@ export class Enemy extends Group {
       return;
     }
     
-    // CRITICAL: Directly reduce health with no conditions
+    // Apply damage
     this.health -= amount;
     console.log(`[ENEMY] Health after damage: ${this.health}`);
+    
+    // Update visual representation of health
+    this.updateHealthVisual();
     
     // Enter staggered state if hit
     this.state = EnemyState.STAGGERED;
@@ -288,6 +329,12 @@ export class Enemy extends Group {
     
     // Create hit effect
     createHitEffect(this.parent as Scene, this.position.clone(), '#ff3333');
+    
+    // Send event that enemy died (for scoring/game state)
+    const event = new CustomEvent('enemyDied', {
+      detail: { position: this.position.clone() }
+    });
+    window.dispatchEvent(event);
   }
   
   private animate(deltaTime: number): void {
@@ -586,5 +633,60 @@ export class Enemy extends Group {
     
     this.state = EnemyState.STAGGERED;
     this.staggerTime = duration;
+  }
+
+  // Add respawn method
+  public respawn(): void {
+    console.log("Respawning enemy");
+    this.isRespawning = false;
+    this.health = this.maxHealth;
+    
+    // Reset position (randomly offset from origin)
+    this.position.set(
+      (Math.random() - 0.5) * 10,
+      1.8,
+      (Math.random() - 0.5) * 10
+    );
+    
+    // Reset state
+    this.state = EnemyState.IDLE;
+    
+    // Restore visibility
+    this.visible = true;
+    
+    // Re-activate lightsaber if needed
+    if (this.lightsaber) {
+      this.lightsaber.activate();
+    }
+    
+    console.log("Enemy respawned at", this.position);
+  }
+
+  // Add method to update health visual representation
+  private updateHealthVisual(): void {
+    // Find health bar mesh if it exists
+    const healthBar = this.getObjectByName('health-bar');
+    
+    if (healthBar && healthBar instanceof Mesh) {
+      // Update scale to reflect health percentage
+      const healthPercent = Math.max(0, this.health / this.maxHealth);
+      healthBar.scale.x = healthPercent;
+      
+      // Update color based on health level
+      const material = healthBar.material as MeshBasicMaterial;
+      
+      if (healthPercent > 0.6) {
+        material.color.set(0x00ff00); // Green for high health
+      } else if (healthPercent > 0.3) {
+        material.color.set(0xffff00); // Yellow for medium health
+      } else {
+        material.color.set(0xff0000); // Red for low health
+      }
+    }
+  }
+
+  // Add method to explicitly set attack cooldown
+  public setAttackCooldown(time: number): void {
+    this.attackCooldown = time;
   }
 }

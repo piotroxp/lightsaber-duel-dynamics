@@ -533,7 +533,9 @@ export class GameScene {
     this.createEnvironment();
     console.log("Environment created");
 
-    // Add debug elements if in debug mode
+    // Create UI elements including health display
+    this.createUIElements();
+    
     this.addDebugElements(true);
   }
   
@@ -585,5 +587,45 @@ export class GameScene {
     
     // Additional player setup if needed
     console.log("Player positioned at:", this.player.position);
+  }
+  
+  // Add method to create UI elements
+  private createUIElements(): void {
+    // Create player health bar
+    const healthBarContainer = document.createElement('div');
+    healthBarContainer.id = 'player-health-container';
+    healthBarContainer.style.position = 'absolute';
+    healthBarContainer.style.bottom = '20px';
+    healthBarContainer.style.left = '20px';
+    healthBarContainer.style.width = '200px';
+    healthBarContainer.style.height = '20px';
+    healthBarContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    healthBarContainer.style.border = '2px solid #ffffff';
+    healthBarContainer.style.borderRadius = '4px';
+    
+    const healthBar = document.createElement('div');
+    healthBar.id = 'player-health';
+    healthBar.style.width = '100%';
+    healthBar.style.height = '100%';
+    healthBar.style.backgroundColor = '#00ff00';
+    healthBar.style.transition = 'width 0.3s ease-out';
+    
+    healthBarContainer.appendChild(healthBar);
+    this.container.appendChild(healthBarContainer);
+    
+    // Set up event listener to update health bar
+    this.player.addEventListener('healthChanged', (event: any) => {
+      const healthPercent = event.health / event.maxHealth;
+      healthBar.style.width = `${healthPercent * 100}%`;
+      
+      // Change color based on health
+      if (healthPercent > 0.6) {
+        healthBar.style.backgroundColor = '#00ff00'; // Green
+      } else if (healthPercent > 0.3) {
+        healthBar.style.backgroundColor = '#ffff00'; // Yellow
+      } else {
+        healthBar.style.backgroundColor = '#ff0000'; // Red
+      }
+    });
   }
 }
