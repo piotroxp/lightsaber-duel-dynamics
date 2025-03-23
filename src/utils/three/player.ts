@@ -87,8 +87,8 @@ export class Player extends Group {
     this.camera.add(this.lightsaber);
     
     // Position lightsaber at bottom right of view
-    this.lightsaber.position.set(0.4, -0.1, -0.3);
-    this.lightsaber.rotation.x = Math.PI * (-0.1);
+    this.lightsaber.position.set(0.6, -0.1, -0.3);
+    this.lightsaber.rotation.x = Math.PI * (-0.13);
     
     // Add keyboard event listeners
     this.setupEventListeners();
