@@ -1,4 +1,4 @@
-import { Scene, Raycaster, Vector3, Mesh, Group, Object3D, Camera, MeshBasicMaterial, SphereGeometry } from 'three';
+import { Scene, Raycaster, Vector3, Mesh, Group, Object3D, Camera, MeshBasicMaterial, SphereGeometry, MeshStandardMaterial } from 'three';
 import { Player } from './player';
 import { Enemy } from './enemy';
 import gameAudio from './audio';
@@ -388,10 +388,12 @@ export class CombatSystem {
   createScarMark(target: Player | Enemy, hitPosition: Vector3): void {
     try {
       // Create glowing material for scar
-      const scarMaterial = new MeshBasicMaterial({
+      const scarMaterial = new MeshStandardMaterial({
         color: 0xff3300,
         emissive: 0xff3300,
         emissiveIntensity: 2.0,
+        metalness: 0.0,
+        roughness: 1.0
       });
       
       // Create small scar mesh

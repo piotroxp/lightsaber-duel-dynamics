@@ -87,7 +87,7 @@ export class Enemy extends Group {
     
     // Create lightsaber with more dramatic parameters
     this.lightsaber = new Lightsaber({
-      color: options.lightsaberColor || '#ff0000',
+      color: '#ff0000', // Force red color for enemy lightsabers
       bladeLength: 1.5,
       hiltLength: 0.25,
       glowIntensity: 1.5
@@ -102,6 +102,7 @@ export class Enemy extends Group {
     setTimeout(() => {
       if (this.lightsaber) {
         this.lightsaber.activate();
+        this.lightsaber.setColor('#ff0000'); // Force red color again after activation
         console.log("Enemy lightsaber activated");
       }
     }, 500);
@@ -627,30 +628,26 @@ export class Enemy extends Group {
     this.isRespawning = false;
     this.health = this.maxHealth;
     
-    // Reset to original position without Y shift
-    this.position.set(0, 0, -5); // Use exact starting position
-    this.rotation.set(0, 0, 0); // Reset rotation
+    // Reset position
+    this.position.set(
+      Math.random() * 10 - 5,
+      0,
+      Math.random() * 10 - 5
+    );
     
     // Reset state
     this.state = EnemyState.IDLE;
+    this.attacking = false;
+    this.blocking = false;
     
-    // Restore visibility
-    this.visible = true;
-    
-    // Re-activate lightsaber if needed
+    // Ensure lightsaber is active and red
     if (this.lightsaber) {
       this.lightsaber.activate();
+      this.lightsaber.setColor('#ff0000'); // Force red color on respawn
     }
     
-    // Ensure health bar is updated
-    window.dispatchEvent(new CustomEvent('enemyHealthChanged', {
-      detail: {
-        health: this.health,
-        maxHealth: this.maxHealth
-      }
-    }));
-    
-    console.log("Enemy respawned at", this.position);
+    // Dispatch event
+    this.dispatchEvent({ type: 'respawned' });
   }
 
   // Add method to update health visual representation

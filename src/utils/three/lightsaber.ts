@@ -273,7 +273,7 @@ export class Lightsaber extends Group {
       
       // Update core visuals - make it much more vibrant
       if (this.bladeCore && this.bladeCore.material instanceof MeshBasicMaterial) {
-        // Make core pure white and very bright
+        // Always make core white for better visual effect
         this.bladeCore.material.color.setRGB(1.0, 1.0, 1.0);
         this.bladeCore.material.opacity = 0.9;
         
@@ -284,7 +284,7 @@ export class Lightsaber extends Group {
       
       // Update plasma core - make it extremely bright
       if (this.plasmaCore && this.plasmaCore.material instanceof MeshBasicMaterial) {
-        // Pure white center
+        // Always make plasma core pure white
         this.plasmaCore.material.color.setRGB(1.0, 1.0, 1.0);
         this.plasmaCore.material.opacity = 1.0;
         
@@ -742,19 +742,16 @@ export class Lightsaber extends Group {
       this.blade.material.color.set(color);
     }
     
-    // Update core color (slightly brighter)
+    // Update core color (always white for better visual effect)
     if (this.bladeCore && this.bladeCore.material instanceof MeshBasicMaterial) {
-      // Create a brighter version of the color
-      const coreColor = new Color(color);
-      coreColor.multiplyScalar(1.2); // Make it brighter
-      this.bladeCore.material.color.copy(coreColor);
+      // Always make core white for better visual effect
+      this.bladeCore.material.color.setRGB(1.0, 1.0, 1.0);
     }
     
-    // Update plasma core (even brighter)
+    // Update plasma core (always white)
     if (this.plasmaCore && this.plasmaCore.material instanceof MeshBasicMaterial) {
-      const plasmaColor = new Color(color);
-      plasmaColor.multiplyScalar(1.5); // Make it even brighter
-      this.plasmaCore.material.color.copy(plasmaColor);
+      // Always make plasma core pure white
+      this.plasmaCore.material.color.setRGB(1.0, 1.0, 1.0);
     }
     
     // Update light color
@@ -764,7 +761,7 @@ export class Lightsaber extends Group {
     
     // Update glow emitter if it exists
     if (this.glowEmitter) {
-      // Update emitter color (implementation depends on your ParticleEmitter class)
+      // Update emitter color
       this.glowEmitter.setColor(parseInt(color.replace('#', '0x')));
     }
   }

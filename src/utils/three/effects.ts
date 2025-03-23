@@ -151,6 +151,18 @@ export class ParticleEmitter extends Group {
       }
     }
   }
+
+  setColor(color: number): void {
+    // Update the color for all particles
+    this.options.color = color;
+    
+    // Update existing particles
+    this.particles.forEach(particle => {
+      if (particle.material instanceof MeshBasicMaterial) {
+        particle.material.color.setHex(color);
+      }
+    });
+  }
 }
 
 // Create a simple hit effect
