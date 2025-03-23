@@ -32,8 +32,17 @@ export class CombatSystem {
   }
   
   update(deltaTime: number): void {
-    // Call the checkSaberCollisions method directly
+    // Call the saber collision check
     this.checkSaberCollisions();
+    
+    // CRITICAL: Call our new damage detection methods
+    this.checkPlayerDamageToEnemies();
+    this.checkEnemyDamageToPlayer(deltaTime);
+    
+    // Debug the attack states
+    if (this.player.isAttacking()) {
+      console.log("Player is attacking - checking for damage");
+    }
     
     // Check for player attacking enemies
     if (this.player.isAttacking()) {
@@ -291,5 +300,55 @@ export class CombatSystem {
       // Reset camera to original position
       this.camera.position.copy(originalPosition);
     }, 150);
+  }
+
+  applyDamageToEnemy(enemy: Enemy, amount: number, sourcePosition: Vector3): void {
+    // Direct damage application with console log for debugging
+    console.log(`Applying ${amount} damage to enemy`);
+    enemy.takeDamage(amount, sourcePosition);
+      
+    // Visual and audio effects
+    const hitPosition = enemy.position.clone();
+    hitPosition.y = 1.2;
+    createHitEffect(this.scene, hitPosition, '#ff0000');
+    gameAudio.playSound('enemyHit', { volume: 0.7 });
+  }
+
+  checkPlayerDamageToEnemies(): void {
+    if (!this.player.isAttacking()) return;
+    
+    console.log("Checking for player damage to enemies");
+    const playerSaberPos = this.player.getLightsaberPosition();
+    
+    for (const enemy of this.enemies) {
+      if (!enemy.isAlive()) continue;
+      
+      // More generous distance check (3.0 units)
+      const hitDistance = enemy.position.distanceTo(playerSaberPos);
+      console.log(`Distance to enemy: ${hitDistance.toFixed(2)} units`);
+      
+      if (hitDistance < 3.0) {
+        console.log(`DIRECT HIT: Player hit enemy at distance ${hitDistance.toFixed(2)}`);
+        this.applyDamageToEnemy(enemy, 25, playerSaberPos);
+        break; // Only hit one enemy per swing
+      }
+    }
+  }
+
+  checkEnemyDamageToPlayer(deltaTime: number): void {
+    if (!this.player.isAlive()) return;
+    
+    for (const enemy of this.enemies) {
+      if (!enemy.isAlive() || !enemy.isAttacking()) continue;
+      
+      // Simplified check for reliable enemy hits
+      const enemySaberPos = enemy.getLightsaberPosition();
+      const distToPlayer = this.player.getPosition().distanceTo(enemySaberPos);
+      
+      if (distToPlayer < 1.8 && enemy.getAttackTimer() > 0.2) {
+        this.player.takeDamage(enemy.getAttackDamage(), enemy.getPosition());
+        break;
+      }
+    }
   }
 }
