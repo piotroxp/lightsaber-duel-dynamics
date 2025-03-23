@@ -28,7 +28,7 @@ export class Lightsaber extends Group {
   private isBlocking: boolean = false;
   private initialRotation = { x: 0, y: 0, z: 0 };
   private swingAnimation: number | null = null;
-  private bladeFlare: Mesh;
+  private bladeFlare: Mesh | null = null;
   private pulseTime: number = 0;
 
   constructor(options: LightsaberOptions = {}) {
@@ -38,6 +38,10 @@ export class Lightsaber extends Group {
     this.bladeLength = options.bladeLength || 1.2;
     this.hiltLength = options.hiltLength || 0.25; // Slightly longer for more detail
     this.glowIntensity = options.glowIntensity || 1.0;
+    
+    // Initialize properties to prevent null reference errors
+    this.glowEmitter = null;
+    this.bladeFlare = null;
     
     // Create hilt group to contain all hilt components
     const hiltGroup = new Group();
@@ -220,32 +224,89 @@ export class Lightsaber extends Group {
     if (!this.blade) return;
     
     if (this.active) {
+      // Make all blade components visible
+      this.blade.visible = true;
+      this.bladeCore.visible = true;
+      this.plasmaCore.visible = true;
+      this.bladeLight.visible = true;
+      this.bladeFlare.visible = true;
+      
+      // Set proper scale for all blade components
+      this.blade.scale.set(1, 1, 1);
+      this.bladeCore.scale.set(1, 1, 1);
+      this.plasmaCore.scale.set(1, 1, 1);
+      
+      // Set proper position for all blade components
+      this.blade.position.y = this.hiltLength + this.bladeLength / 2;
+      this.bladeCore.position.y = this.hiltLength + this.bladeLength / 2;
+      this.plasmaCore.position.y = this.hiltLength + this.bladeLength / 2;
+      
+      // Play activation sound
+      gameAudio.playSound('lightsaberOn', { volume: 0.7 });
+      
+      // CRITICAL FIX: Immediately start the glow effect
+      // Apply immediate partial glow to make it visible
+      (this.blade.material as MeshBasicMaterial).opacity = 0.4;
+      (this.bladeCore.material as MeshBasicMaterial).opacity = 0.6;
+      (this.plasmaCore.material as MeshBasicMaterial).opacity = 0.8;
+      this.bladeLight.intensity = 1.0 * this.glowIntensity;
       // Enhanced active blade visuals
       const bladeMaterial = this.blade.material as MeshBasicMaterial;
       
       // Make the blade more vibrant with a higher intensity core
-      bladeMaterial.color.setRGB(0.6, 0.8, 1.0);
+      bladeMaterial.color.setRGB(0.7, 0.9, 1.0);
       
-      // Add a subtle pulsing effect
-      const pulseAmount = Math.sin(Date.now() * 0.005) * 0.1 + 0.9;
+      // Add a more pronounced pulsing effect
+      const pulseAmount = Math.sin(Date.now() * 0.008) * 0.25 + 0.9;
       this.blade.scale.set(1, 1, pulseAmount);
       
       // Make sure the blade is visible
       this.blade.visible = true;
       
-      // Update glow effect if it exists
+      // Safely handle glowEmitter
       if (this.glowEmitter) {
         this.glowEmitter.visible = true;
         // Make the glow pulse slightly out of sync with the blade
-        const glowPulse = Math.sin(Date.now() * 0.003) * 0.2 + 1.2;
+        const glowPulse = Math.sin(Date.now() * 0.006) * 0.4 + 1.3;
         this.glowEmitter.scale.set(glowPulse, glowPulse, glowPulse);
+      }
+      
+      // Update core visuals - make it much more vibrant
+      if (this.bladeCore && this.bladeCore.material instanceof MeshBasicMaterial) {
+        // Make core pure white and very bright
+        this.bladeCore.material.color.setRGB(1.0, 1.0, 1.0);
+        this.bladeCore.material.opacity = 0.9;
+        
+        // Add stronger pulsing to the core
+        const corePulse = Math.sin(Date.now() * 0.01) * 0.15 + 0.95;
+        this.bladeCore.scale.set(corePulse, 1, corePulse);
+      }
+      
+      // Update plasma core - make it extremely bright
+      if (this.plasmaCore && this.plasmaCore.material instanceof MeshBasicMaterial) {
+        // Pure white center
+        this.plasmaCore.material.color.setRGB(1.0, 1.0, 1.0);
+        this.plasmaCore.material.opacity = 1.0;
+        
+        // Add rapid pulsing to the plasma core
+        const plasmaPulse = Math.sin(Date.now() * 0.015) * 0.3 + 0.9;
+        this.plasmaCore.scale.set(plasmaPulse, 1, plasmaPulse);
+      }
+      
+      // Update blade light intensity with pulsing
+      if (this.bladeLight) {
+        const lightPulse = Math.sin(Date.now() * 0.01) * 0.3 + 1.0;
+        this.bladeLight.intensity = this.glowIntensity * 1.5 * lightPulse;
+      }
+      
+      // Update blade flare with pulsing
+      if (this.bladeFlare) {
+        const flarePulse = Math.sin(Date.now() * 0.007) * 0.4 + 1.2;
+        this.bladeFlare.scale.set(flarePulse, flarePulse, flarePulse);
       }
     } else {
       // Blade is off
       this.blade.visible = false;
-      if (this.glowEmitter) {
-        this.glowEmitter.visible = false;
-      }
     }
   }
   
@@ -255,32 +316,6 @@ export class Lightsaber extends Group {
     this.active = true;
     this.activationProgress = 1; // Set to full extension immediately
     
-    // Make all blade components visible
-    this.blade.visible = true;
-    this.bladeCore.visible = true;
-    this.plasmaCore.visible = true;
-    this.bladeLight.visible = true;
-    this.bladeFlare.visible = true;
-    
-    // Set proper scale for all blade components
-    this.blade.scale.set(1, 1, 1);
-    this.bladeCore.scale.set(1, 1, 1);
-    this.plasmaCore.scale.set(1, 1, 1);
-    
-    // Set proper position for all blade components
-    this.blade.position.y = this.hiltLength + this.bladeLength / 2;
-    this.bladeCore.position.y = this.hiltLength + this.bladeLength / 2;
-    this.plasmaCore.position.y = this.hiltLength + this.bladeLength / 2;
-    
-    // Play activation sound
-    gameAudio.playSound('lightsaberOn', { volume: 0.7 });
-    
-    // CRITICAL FIX: Immediately start the glow effect
-    // Apply immediate partial glow to make it visible
-    (this.blade.material as MeshBasicMaterial).opacity = 0.4;
-    (this.bladeCore.material as MeshBasicMaterial).opacity = 0.6;
-    (this.plasmaCore.material as MeshBasicMaterial).opacity = 0.8;
-    this.bladeLight.intensity = 1.0 * this.glowIntensity;
     this.updateBladeVisuals();
   }
   

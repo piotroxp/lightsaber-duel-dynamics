@@ -47,14 +47,14 @@ export class CombatSystem {
         console.log("⚔️ Distance to enemy:", hitDistance.toFixed(2));
         
         // Very generous hit detection
-        if (hitDistance < 6.0) {
+        if (hitDistance < 3.0) {
           console.log("🎯 DIRECT HIT DETECTED!");
           
           // Debug BEFORE damage
           console.log("Enemy health BEFORE damage:", enemy.getHealth());
           
           // CRITICAL: Reduce damage to require at least 5 hits
-          enemy.takeDamage(20);
+          enemy.takeDamage(10);
           
           // Debug AFTER damage
           console.log("Enemy health AFTER damage:", enemy.getHealth());
@@ -65,6 +65,14 @@ export class CombatSystem {
           
           // Add cooldown to prevent multiple hits in one swing
           this.lastHitTime = performance.now() / 1000;
+          
+          // Mark that we've applied damage for this attack
+          this.player.setDamageAppliedInCurrentAttack(true);
+          
+          // Reset damage flag after a delay
+          setTimeout(() => {
+            this.player.setDamageAppliedInCurrentAttack(false);
+          }, 800);
           
           break;
         }
@@ -412,7 +420,8 @@ export class CombatSystem {
   }
 
   checkPlayerAttack(deltaTime: number): void {
-    if (!this.player.isAttacking()) return;
+    // Skip if player is dead or not attacking
+    if (!this.player.isAlive() || !this.player.isAttacking()) return;
     
     // Check if we've already applied damage for this attack
     if (this.player.hasAppliedDamageInCurrentAttack()) {
@@ -420,7 +429,6 @@ export class CombatSystem {
     }
     
     const playerSaberPosition = this.player.getLightsaberPosition();
-    const attackDirection = this.player.getDirection();
     
     for (const enemy of this.enemies) {
       if (!enemy.isAlive()) continue;
@@ -430,11 +438,12 @@ export class CombatSystem {
       const enemyTorsoPosition = enemyPosition.clone().add(new Vector3(0, 1.0, 0));
       const distance = playerSaberPosition.distanceTo(enemyTorsoPosition);
       
-      if (distance < 1.5) {
+      // More reasonable hit distance
+      if (distance < 2.0) {
         console.log("🎯 HIT DETECTED! Distance:", distance);
         
         // Apply damage more consistently
-        const damage = 5; // Further reduced damage amount to prevent one-hit kills
+        const damage = 10; // Balanced damage amount
         
         // CRITICAL FIX: Ensure enemy takes damage
         enemy.takeDamage(damage);
@@ -445,7 +454,7 @@ export class CombatSystem {
         // Add a cooldown to prevent rapid damage
         setTimeout(() => {
           this.player.setDamageAppliedInCurrentAttack(false);
-        }, 500);
+        }, 800); // Longer cooldown for better balance
         
         // Dispatch event for UI update
         const healthChangeEvent = new CustomEvent('enemyHealthChanged', {
@@ -465,6 +474,9 @@ export class CombatSystem {
         
         // Play hit sound
         gameAudio.playSound('enemyHit', { volume: 0.7 });
+        
+        // Apply camera shake for feedback
+        this.applyCameraShake(0.3);
         
         return; // Only hit one enemy at a time
       }
