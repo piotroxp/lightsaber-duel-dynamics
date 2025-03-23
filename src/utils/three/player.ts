@@ -9,11 +9,22 @@ import {
   Mesh,
   MeshBasicMaterial,
   SphereGeometry,
-  BoxGeometry
+  BoxGeometry,
+  CylinderGeometry
 } from 'three';
 import { Lightsaber } from './lightsaber';
 import gameAudio from './audio';
 import { createHitEffect } from './effects';
+
+// Extend Three.js event types with our custom events
+declare global {
+  namespace THREE {
+    interface Object3DEventMap {
+      healthChanged: { health: number, maxHealth: number };
+      died: {};l
+    }
+  }
+}
 
 enum PlayerState {
   IDLE = 'idle',
@@ -44,12 +55,16 @@ export class Player extends Group {
   private debugMode: boolean = false;
   private isThirdPerson: boolean = false;
   private originalCameraPosition: Vector3 = new Vector3();
+  private playerModel: Group | null = null;
+  private lightsaberOffset: Vector3 = new Vector3(0.09, -0.49, -0.75);
   
-  constructor(camera: Camera, scene: Scene) {
+  constructor(scene: Scene, camera: Camera) {
     super();
     
-    this.camera = camera;
     this.scene = scene;
+    this.camera = camera;
+    
+    this.createPlayerModel();
     
     // Create debug visual for player position
     if (this.debugMode) {
@@ -63,15 +78,17 @@ export class Player extends Group {
     
     // Create lightsaber with proper options object
     this.lightsaber = new Lightsaber({
-      color: '#3366ff', // Blue color
+      color: '#3366ff',
       bladeLength: 1.2,
-      hiltLength: 0.25, // Slightly longer hilt
-      glowIntensity: 1.2
+      hiltLength: 0.25,
+      glowIntensity: 1.5
     });
-    
-    // Reposition lightsaber so only top 25% of hilt is visible in normal position
-    this.lightsaber.position.set(0.1, -0.47, -0.35);
+    // Add lightsaber to camera for first-person view
     this.camera.add(this.lightsaber);
+    
+    // Position lightsaber at bottom right of view
+    this.lightsaber.position.set(0.4, -0.1, -0.3);
+    this.lightsaber.rotation.x = Math.PI * (-0.1);
     
     // Add keyboard event listeners
     this.setupEventListeners();
@@ -108,6 +125,7 @@ export class Player extends Group {
         this.isMovingRight = true;
         break;
       case '3':  // Toggle third-person view
+        console.log("Toggle third-person view key pressed");
         this.toggleThirdPersonView();
         break;
     }
@@ -176,6 +194,20 @@ export class Player extends Group {
       
       this.camera.position.copy(thirdPersonPosition);
     }
+    
+    // Always update player model rotation to match camera direction
+    if (this.playerModel) {
+      const direction = new Vector3();
+      this.camera.getWorldDirection(direction);
+      direction.y = 0; // Keep rotation only around Y axis
+      
+      if (direction.length() > 0.1) {
+        this.playerModel.lookAt(this.position.clone().add(direction));
+      }
+    }
+    
+    // Update lightsaber position
+    this.updateLightsaberPosition();
   }
   
   private handleMovement(deltaTime: number): void {
@@ -305,12 +337,12 @@ export class Player extends Group {
       type: 'healthChanged', 
       health: this.health, 
       maxHealth: this.maxHealth 
-    });
+    } as any);
     
     if (this.health <= 0) {
       console.log("[PLAYER] Player died!");
       this.state = PlayerState.DEAD;
-      this.dispatchEvent({ type: 'died' });
+      this.dispatchEvent({ type: 'died' } as any);
     } else {
       // Apply short stagger
       this.state = PlayerState.STAGGERED;
@@ -345,8 +377,8 @@ export class Player extends Group {
   
   getLightsaberPosition(): Vector3 {
     try {
-      if (this.lightsaber && typeof this.lightsaber.getBladeTipPosition === 'function') {
-        return this.lightsaber.getBladeTipPosition();
+      if (this.lightsaber && typeof this.lightsaber.getBladeTopPosition === 'function') {
+        return this.lightsaber.getBladeTopPosition();
       } else {
         const offset = new Vector3(0.8, 1.0, 0.5);
         const rotatedOffset = offset.clone().applyQuaternion(this.quaternion);
@@ -393,6 +425,7 @@ export class Player extends Group {
   }
   
   toggleThirdPersonView(): void {
+    console.log("toggleThirdPersonView called, current mode:", this.isThirdPerson);
     this.isThirdPerson = !this.isThirdPerson;
     
     if (this.isThirdPerson) {
@@ -405,15 +438,81 @@ export class Player extends Group {
       
       // Position camera behind and above player
       const thirdPersonPosition = this.position.clone()
-        .sub(cameraDirection.multiplyScalar(3))  // Move back
-        .add(new Vector3(0, 1.5, 0));            // Move up
+        .sub(cameraDirection.multiplyScalar(4))  // Move back more
+        .add(new Vector3(0, 2.0, 0));            // Move up more
       
       this.camera.position.copy(thirdPersonPosition);
+      
+      // Move lightsaber from camera to player model
+      if (this.lightsaber && this.camera) {
+        const lightsaberWorldPos = new Vector3();
+        this.lightsaber.getWorldPosition(lightsaberWorldPos);
+        this.camera.remove(this.lightsaber);
+        this.add(this.lightsaber);
+        this.lightsaber.position.set(0.5, 1.2, 0.1);
+      }
     } else {
       // Restore first-person view
       this.camera.position.copy(this.originalCameraPosition);
+      
+      // Move lightsaber back to camera
+      if (this.lightsaber) {
+        this.remove(this.lightsaber);
+        this.camera.add(this.lightsaber);
+        this.lightsaber.position.set(0.4, -0.1, -0.3);
+      }
     }
     
     console.log(`Camera view changed to ${this.isThirdPerson ? 'third' : 'first'} person`);
+  }
+  
+  private createPlayerModel(): void {
+    // Create a simple player model (lightsaber wielder)
+    this.playerModel = new Group();
+    
+    // Create head
+    const headGeometry = new SphereGeometry(0.25, 16, 16);
+    const headMaterial = new MeshBasicMaterial({ color: 0x8888ff });
+    const head = new Mesh(headGeometry, headMaterial);
+    head.position.y = 1.6;
+    this.playerModel.add(head);
+    
+    // Create body
+    const bodyGeometry = new CylinderGeometry(0.25, 0.2, 1.0, 8);
+    const bodyMaterial = new MeshBasicMaterial({ color: 0x222266 });
+    const body = new Mesh(bodyGeometry, bodyMaterial);
+    body.position.y = 1.0;
+    this.playerModel.add(body);
+    
+    // Create arms
+    const armGeometry = new CylinderGeometry(0.08, 0.08, 0.6, 8);
+    const armMaterial = new MeshBasicMaterial({ color: 0x8888ff });
+    
+    // Right arm (holding lightsaber)
+    const rightArm = new Mesh(armGeometry, armMaterial);
+    rightArm.position.set(0.3, 1.2, 0);
+    rightArm.rotation.z = -Math.PI / 4;
+    this.playerModel.add(rightArm);
+    
+    // Left arm
+    const leftArm = new Mesh(armGeometry, armMaterial);
+    leftArm.position.set(-0.3, 1.2, 0);
+    leftArm.rotation.z = Math.PI / 4;
+    this.playerModel.add(leftArm);
+    
+    // Hide by default (first person mode)
+    this.playerModel.visible = false;
+    this.add(this.playerModel);
+  }
+  
+  private updateLightsaberPosition(): void {
+    if (this.isThirdPerson && this.playerModel) {
+      // In third person, attach lightsaber to player model's right hand
+      this.lightsaber.position.set(0.5, 1.2, 0.1);
+      this.lightsaber.rotation.set(0, 0, -Math.PI / 4);
+    } else {
+      // In first person, position relative to camera
+      this.lightsaber.position.copy(this.lightsaberOffset);
+    }
   }
 }

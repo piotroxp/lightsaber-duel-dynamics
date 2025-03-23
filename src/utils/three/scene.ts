@@ -75,7 +75,7 @@ export class GameScene {
     this.setupCamera();
     
     // Create player (needs camera reference)
-    this.player = new Player(this.camera, this.scene);
+    this.player = new Player(this.scene, this.camera);
     
     // Create combat system (needs player and scene references)
     this.combatSystem = new CombatSystem(this.scene, this.player);
