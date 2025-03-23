@@ -1,4 +1,4 @@
-import { Scene, Raycaster, Vector3, Mesh, Group, Object3D, Camera } from 'three';
+import { Scene, Raycaster, Vector3, Mesh, Group, Object3D, Camera, MeshBasicMaterial, SphereGeometry } from 'three';
 import { Player } from './player';
 import { Enemy } from './enemy';
 import gameAudio from './audio';
@@ -33,86 +33,67 @@ export class CombatSystem {
   }
   
   update(deltaTime: number): void {
-    // Call the saber collision check
-    this.checkSaberCollisions();
+    console.log("COMBAT SYSTEM UPDATE CALLED");
     
-    // CRITICAL: Call our new damage detection methods
-    this.checkPlayerDamageToEnemies();
-    this.checkEnemyDamageToPlayer(deltaTime);
-    
-    // Debug the attack states
+    // Player attack debug
     if (this.player.isAttacking()) {
-      console.log("Player is attacking - checking for damage");
-    }
-    
-    // Check for player attacking enemies
-    if (this.player.isAttacking()) {
-      const playerPos = this.player.getPosition();
+      console.log("👊 PLAYER IS ATTACKING");
       
       for (const enemy of this.enemies) {
         if (!enemy.isAlive()) continue;
         
-        // Calculate distance between player and enemy
-        const distance = playerPos.distanceTo(enemy.position);
+        // SIMPLIFIED: Use more reliable hit detection with fixed distance
+        const playerPos = this.player.getPosition();
+        const hitDistance = enemy.position.distanceTo(playerPos);
         
-        // If in strike range, apply damage
-        if (distance < 2.5) {
-          // Get current attack position (lightsaber blade)
-          const attackPos = this.player.getLightsaberPosition();
+        console.log("⚔️ Distance to enemy:", hitDistance.toFixed(2));
+        
+        // Very generous hit detection - almost guaranteed to hit
+        if (hitDistance < 6.0) {
+          console.log("🎯 DIRECT HIT DETECTED!");
           
-          // Calculate more precise hit detection
-          const hitDist = enemy.position.distanceTo(attackPos);
+          // Debug BEFORE damage
+          console.log("Enemy health BEFORE damage:", enemy.getHealth());
           
-          // CRITICAL: Direct damage application - guaranteed hit at close range
-          if (hitDist < 2.0) {
-            console.log("Player hit enemy with lightsaber!");
-            
-            // Apply significant damage
-            enemy.takeDamage(25, playerPos);
-            
-            // Visual and sound effects
-            const hitPosition = enemy.position.clone();
-            hitPosition.y = 1.2;
-            createHitEffect(this.scene, hitPosition, '#ff0000');
-            gameAudio.playSound('enemyHit', { volume: 0.8 });
-            
-            // Force feedback
-            this.applyCameraShake(0.3);    
-            this.applyDamageToEnemy(enemy, 25, playerPos);
-            
-            // Only hit one enemy per swing
-            break;
-          }
+          // Apply damage directly
+          enemy.takeDamage(25, playerPos);
+          
+          // Debug AFTER damage
+          console.log("Enemy health AFTER damage:", enemy.getHealth());
+          
+          // Visuals and audio
+          createHitEffect(this.scene, enemy.position.clone().add(new Vector3(0, 1.2, 0)), '#ff0000');
+          gameAudio.playSound('enemyHit', { volume: 1.0 });
+          
+          break;
         }
       }
     }
     
-    // Check for enemies attacking player
+    // SIMPLIFIED: Enemy attack detection
     for (const enemy of this.enemies) {
       if (!enemy.isAlive() || !enemy.isAttacking()) continue;
       
-      // CRITICAL FIX: Force damage application during attack animation
-      const attackProgress = enemy.getAttackTimer();
-      
-      // Apply damage at the peak of the swing
-      if (attackProgress > 0.2 && attackProgress < 0.5) {
-        const distanceToPlayer = enemy.position.distanceTo(this.player.getPosition());
+      // More generous hit window
+      if (enemy.getAttackTimer() > 0.1 && enemy.getAttackTimer() < 0.8) {
+        console.log("⚔️ ENEMY ATTACK WINDOW ACTIVE");
         
-        // If enemy is close enough to hit player
-        if (distanceToPlayer < 2.5) {
-          console.log("Enemy hit player with lightsaber!");
+        const playerPos = this.player.getPosition();
+        const hitDistance = playerPos.distanceTo(enemy.position);
+        
+        console.log("⚔️ Distance to player:", hitDistance.toFixed(2));
+        
+        // More generous hit range
+        if (hitDistance < 5.0) {
+          console.log("🎯 PLAYER HIT BY ENEMY!");
           
-          // Apply damage directly
+          // Direct damage application
           this.player.takeDamage(enemy.getAttackDamage(), enemy.getPosition());
           
-          // Visual and sound effects
-          const hitPos = this.player.getPosition().clone();
-          hitPos.y = 1.2;
-          createHitEffect(this.scene, hitPos, '#ff0000');
-          gameAudio.playSound('playerHit', { volume: 0.8 });
-          
-          // Force feedback
-          this.applyCameraShake(0.5);
+          // Visuals and audio
+          createHitEffect(this.scene, playerPos.clone().add(new Vector3(0, 1.2, 0)), '#ff0000');
+          gameAudio.playSound('playerHit', { volume: 1.0 });
+          break;
         }
       }
     }
@@ -351,6 +332,41 @@ export class CombatSystem {
         this.player.takeDamage(enemy.getAttackDamage(), enemy.getPosition());
         break;
       }
+    }
+  }
+
+  // Add method to create scar marks at hit locations
+  createScarMark(target: Player | Enemy, hitPosition: Vector3): void {
+    try {
+      // Create glowing material for scar
+      const scarMaterial = new MeshBasicMaterial({
+        color: 0xff3300,
+        emissive: 0xff3300,
+        emissiveIntensity: 2.0,
+      });
+      
+      // Create small scar mesh
+      const scarMesh = new Mesh(
+        new SphereGeometry(0.05, 8, 8),
+        scarMaterial
+      );
+      
+      // Position scar at hit point with slight randomization
+      const scarPosition = target.getPosition().clone();
+      scarPosition.y = 1.0 + Math.random() * 0.8; // Random height on body
+      scarPosition.x += (Math.random() - 0.5) * 0.3;
+      scarPosition.z += (Math.random() - 0.5) * 0.3;
+      
+      scarMesh.position.copy(scarPosition);
+      this.scene.add(scarMesh);
+      
+      // Fade out and remove after delay
+      setTimeout(() => {
+        this.scene.remove(scarMesh);
+        scarMaterial.dispose();
+      }, 3000);
+    } catch (error) {
+      console.error("Error creating scar mark:", error);
     }
   }
 }

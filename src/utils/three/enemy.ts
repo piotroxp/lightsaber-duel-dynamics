@@ -237,13 +237,17 @@ export class Enemy extends Group {
   }
   
   takeDamage(amount: number, attackerPosition: Vector3): void {
-    console.log(`Enemy taking ${amount} damage, current health: ${this.health}`);
+    console.log(`[ENEMY] Taking ${amount} damage from position:`, attackerPosition);
+    console.log(`[ENEMY] Current health before damage: ${this.health}`);
     
-    if (this.state === EnemyState.DEAD) return;
+    if (this.state === EnemyState.DEAD) {
+      console.log("[ENEMY] Already dead, ignoring damage");
+      return;
+    }
     
     // CRITICAL: Directly reduce health with no conditions
     this.health -= amount;
-    console.log(`Enemy health after damage: ${this.health}`);
+    console.log(`[ENEMY] Health after damage: ${this.health}`);
     
     // Enter staggered state if hit
     this.state = EnemyState.STAGGERED;
@@ -251,6 +255,7 @@ export class Enemy extends Group {
     
     // Check if dead
     if (this.health <= 0) {
+      console.log("[ENEMY] Enemy died!");
       this.die();
       return;
     }
@@ -566,14 +571,9 @@ export class Enemy extends Group {
 
   // Add missing getLightsaberPosition method to Enemy class
   getLightsaberPosition(): Vector3 {
-    // If no lightsaber, return position at hand height
-    if (!this.lightsaber) {
-      return this.position.clone().add(new Vector3(0.5, 1.1, 0.3));
-    }
-    
-    // Calculate the position at the tip of the lightsaber blade
-    const saberPos = this.lightsaber.localToWorld(new Vector3(0, 1.4, 0));
-    return saberPos;
+    const position = this.lightsaber ? this.lightsaber.getBladeTipPosition() : this.position.clone();
+    console.log("[ENEMY] Lightsaber position:", position);
+    return position;
   }
 
   // Implement missing playLightsaberClashSound method

@@ -42,6 +42,8 @@ export class Player extends Group {
   private lastAttackTime: number = 0;
   private lastBlockTime: number = 0;
   private debugMode: boolean = false;
+  private isThirdPerson: boolean = false;
+  private originalCameraPosition: Vector3 = new Vector3();
   
   constructor(camera: Camera, scene: Scene) {
     super();
@@ -105,6 +107,9 @@ export class Player extends Group {
       case 'd':  // Ensure D maps to moving RIGHT
         this.isMovingRight = true;
         break;
+      case '3':  // Toggle third-person view
+        this.toggleThirdPersonView();
+        break;
     }
   }
   
@@ -155,8 +160,22 @@ export class Player extends Group {
       this.state = PlayerState.IDLE;
     }
     
-    // Update position
-    this.position.copy(this.camera.position);
+    // If in first-person, update position as normal
+    if (!this.isThirdPerson) {
+      this.position.copy(this.camera.position);
+      this.position.y = 1.7; // Keep player at eye level
+    } else {
+      // In third-person, we need to update camera position based on player movement
+      const cameraDirection = new Vector3();
+      this.camera.getWorldDirection(cameraDirection);
+      
+      // Position camera behind and above player
+      const thirdPersonPosition = this.position.clone()
+        .sub(cameraDirection.normalize().multiplyScalar(3))
+        .add(new Vector3(0, 1.5, 0));
+      
+      this.camera.position.copy(thirdPersonPosition);
+    }
   }
   
   private handleMovement(deltaTime: number): void {
@@ -256,36 +275,41 @@ export class Player extends Group {
   }
   
   takeDamage(amount: number, attackerPosition: Vector3): void {
-    if (this.state === PlayerState.DEAD) return;
+    console.log(`[PLAYER] Taking ${amount} damage from position:`, attackerPosition);
+    console.log(`[PLAYER] Current health before damage: ${this.health}`);
     
-    // Reduce damage if blocking
-    let actualDamage = amount;
+    // Skip if already dead
+    if (this.state === PlayerState.DEAD) {
+      console.log("[PLAYER] Already dead, ignoring damage");
+      return;
+    }
+    
+    // Check if we're blocking
     if (this.state === PlayerState.BLOCKING) {
-      actualDamage *= 0.2; // 80% damage reduction when blocking
+      console.log("[PLAYER] Blocking! Damage reduced");
+      amount = Math.max(1, Math.floor(amount * 0.2)); // 80% damage reduction
     }
     
     // Apply damage
-    this.health -= actualDamage;
+    this.health = Math.max(0, this.health - amount);
+    console.log(`[PLAYER] Health after damage: ${this.health}`);
     
-    // Clamp health to 0
-    if (this.health < 0) this.health = 0;
+    // Create visual effect
+    this.createDamageEffect();
     
-    // Check for death
+    // Check if we died
     if (this.health <= 0) {
+      console.log("[PLAYER] Player died!");
       this.state = PlayerState.DEAD;
+      this.dispatchEvent({ type: 'died' });
     } else {
-      // Stagger briefly
+      // Apply short stagger
       this.state = PlayerState.STAGGERED;
-      
-      // Show damage effect
-      this.createDamageEffect();
-      
-      // Reset state after stagger
       setTimeout(() => {
         if (this.state === PlayerState.STAGGERED) {
           this.state = PlayerState.IDLE;
         }
-      }, 500);
+      }, 200);
     }
   }
   
@@ -322,7 +346,9 @@ export class Player extends Group {
   }
   
   getLightsaberPosition(): Vector3 {
-    return this.lightsaber.getBladeTopPosition();
+    const position = this.lightsaber ? this.lightsaber.getBladeTipPosition() : this.position.clone();
+    console.log("[PLAYER] Lightsaber position:", position);
+    return position;
   }
   
   getLightsaberRotation(): Quaternion {
@@ -357,5 +383,30 @@ export class Player extends Group {
   
   getLightsaber(): Lightsaber | null {
     return this.lightsaber;
+  }
+  
+  toggleThirdPersonView(): void {
+    this.isThirdPerson = !this.isThirdPerson;
+    
+    if (this.isThirdPerson) {
+      // Store original position
+      this.originalCameraPosition.copy(this.camera.position);
+      
+      // Move camera back and up for third-person view
+      const cameraDirection = new Vector3();
+      this.camera.getWorldDirection(cameraDirection);
+      
+      // Position camera behind and above player
+      const thirdPersonPosition = this.position.clone()
+        .sub(cameraDirection.multiplyScalar(3))  // Move back
+        .add(new Vector3(0, 1.5, 0));            // Move up
+      
+      this.camera.position.copy(thirdPersonPosition);
+    } else {
+      // Restore first-person view
+      this.camera.position.copy(this.originalCameraPosition);
+    }
+    
+    console.log(`Camera view changed to ${this.isThirdPerson ? 'third' : 'first'} person`);
   }
 }

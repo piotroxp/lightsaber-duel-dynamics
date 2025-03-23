@@ -303,36 +303,31 @@ export class GameScene {
   }
   
   public animate(): void {
-    if (!this.isAnimating) {
-      this.isAnimating = true;
-    }
+    // Skip if not initialized
+    if (!this.isInitialized) return;
     
-    requestAnimationFrame(this.animate.bind(this));
+    this.isAnimating = true;
     
-    // Get delta time
     const deltaTime = this.clock.getDelta();
     
     // Update player
-    if (this.player) {
-      this.player.update(deltaTime);
-    }
+    this.player.update(deltaTime);
     
-    // CRITICAL FIX: Update enemies with proper parameters
+    // Update enemies
     for (const enemy of this.enemies) {
-      if (enemy && typeof enemy.update === 'function') {
-        try {
-          // Explicitly pass player position and direction
-          const playerPos = this.player.getPosition();
-          const playerDir = this.player.getDirection();
-          enemy.update(deltaTime, playerPos, playerDir);
-        } catch (error) {
-          console.warn("Error updating enemy:", error);
-        }
-      }
+      enemy.update(deltaTime, this.player.getPosition(), this.player.getDirection());
     }
     
-    // Render the scene
+    // CRITICAL FIX: Make sure to call combat system update
+    this.combatSystem.update(deltaTime);
+    
+    // Render scene
     this.renderer.render(this.scene, this.camera);
+    
+    // Continue animation loop
+    if (this.isAnimating) {
+      requestAnimationFrame(this.animate.bind(this));
+    }
   }
   
   unlockControls(): void {
