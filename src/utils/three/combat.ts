@@ -3,6 +3,7 @@ import { Player } from './player';
 import { Enemy } from './enemy';
 import gameAudio from './audio';
 import { createSaberClashEffect } from './effects';
+import { createHitEffect } from './effects';
 
 export class CombatSystem {
   private scene: Scene;
@@ -55,7 +56,7 @@ export class CombatSystem {
         const distance = playerPos.distanceTo(enemy.position);
         
         // If in strike range, apply damage
-        if (distanceToEnemy < 2.5) {
+        if (distance < 2.5) {
           // Get current attack position (lightsaber blade)
           const attackPos = this.player.getLightsaberPosition();
           

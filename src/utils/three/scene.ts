@@ -581,8 +581,8 @@ export class GameScene {
     
     // Activate the lightsaber if needed
     try {
-      if (this.player.lightsaber && typeof this.player.lightsaber.activate === 'function') {
-        this.player.lightsaber.activate();
+      if (this.player.getLightsaber() && typeof this.player.getLightsaber().activate === 'function') {
+        this.player.getLightsaber().activate();
       }
     } catch (error) {
       console.warn("Failed to activate player lightsaber:", error);

@@ -236,7 +236,7 @@ export class Enemy extends Group {
     }, 800);
   }
   
-  takeDamage(amount: number, attackerPosition?: Vector3): void {
+  takeDamage(amount: number, attackerPosition: Vector3): void {
     console.log(`Enemy taking ${amount} damage, current health: ${this.health}`);
     
     if (this.state === EnemyState.DEAD) return;
@@ -579,5 +579,12 @@ export class Enemy extends Group {
   // Implement missing playLightsaberClashSound method
   playLightsaberClashSound(): void {
     gameAudio.playSound('lightsaberClash', { volume: 0.8 });
+  }
+
+  applyStagger(duration: number): void {
+    if (this.state === EnemyState.DEAD) return;
+    
+    this.state = EnemyState.STAGGERED;
+    this.staggerTime = duration;
   }
 }

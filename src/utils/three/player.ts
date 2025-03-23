@@ -255,7 +255,7 @@ export class Player extends Group {
     this.lastBlockTime = performance.now() / 1000;
   }
   
-  takeDamage(amount: number): void {
+  takeDamage(amount: number, attackerPosition: Vector3): void {
     if (this.state === PlayerState.DEAD) return;
     
     // Reduce damage if blocking
@@ -291,7 +291,7 @@ export class Player extends Group {
   
   private createDamageEffect(): void {
     try {
-      createHitEffect(this.position, this.scene);
+      createHitEffect(this.scene, this.position);
       
       // Play hit sound
       gameAudio.playSound('player_hit', { volume: 0.5 });
@@ -341,5 +341,21 @@ export class Player extends Group {
   
   getQuaternion(): Quaternion {
     return this.camera.quaternion;
+  }
+  
+  applyStagger(duration: number): void {
+    if (this.state === PlayerState.DEAD) return;
+    
+    this.state = PlayerState.STAGGERED;
+    
+    setTimeout(() => {
+      if (this.state === PlayerState.STAGGERED) {
+        this.state = PlayerState.IDLE;
+      }
+    }, duration * 1000);
+  }
+  
+  getLightsaber(): Lightsaber | null {
+    return this.lightsaber;
   }
 }
