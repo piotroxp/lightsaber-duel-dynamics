@@ -198,10 +198,10 @@ export class Lightsaber extends Group {
     // CRITICAL FIX: Force update blade visuals regardless of activation state
     if (this.active) {
       // Update pulse time
-      this.pulseTime += deltaTime;
+      this.pulseTime -= deltaTime;
       
-      // Calculate pulse factor (0.8 to 1.0 range)
-      const pulseFactor = 0.8 + 0.2 * Math.sin(this.pulseTime * 2);
+      // Calculate pulse factor with more dramatic range (0.7 to 1.3)
+      const pulseFactor = 0.7 + 0.6 * Math.sin(this.pulseTime * 5);
       
       // Force assign materials directly for immediate effect
       if (this.blade.material instanceof MeshBasicMaterial) {
@@ -209,14 +209,24 @@ export class Lightsaber extends Group {
       }
       if (this.bladeCore.material instanceof MeshBasicMaterial) {
         this.bladeCore.material.opacity = 0.9 * pulseFactor;
+        
+        // Add violent pulsing to core scale
+        const coreScale = 0.8 + 0.4 * Math.sin(this.pulseTime * 15);
+        this.bladeCore.scale.x = coreScale;
+        this.bladeCore.scale.z = coreScale;
       }
       if (this.plasmaCore.material instanceof MeshBasicMaterial) {
         this.plasmaCore.material.opacity = pulseFactor;
+        
+        // Add even more violent pulsing to plasma core
+        const plasmaScale = 0.7 + 0.5 * Math.sin(this.pulseTime * 20);
+        this.plasmaCore.scale.x = plasmaScale;
+        this.plasmaCore.scale.z = plasmaScale;
       }
       
       // Force light to be visible and pulsing
       this.bladeLight.visible = true;
-      this.bladeLight.intensity = 2 * this.glowIntensity * pulseFactor;
+      this.bladeLight.intensity = 3 * this.glowIntensity * pulseFactor;
     }
   }
   
@@ -257,8 +267,8 @@ export class Lightsaber extends Group {
       bladeMaterial.color.setRGB(0.7, 0.9, 1.0);
       
       // Add a more pronounced pulsing effect
-      const pulseAmount = Math.sin(Date.now() * 0.008) * 0.25 + 0.9;
-      this.blade.scale.set(1, 1, pulseAmount);
+      const pulseAmount = Math.sin(Date.now() * 0.015) * 0.3 + 0.9;
+      this.blade.scale.set(1.2, 1, pulseAmount);
       
       // Make sure the blade is visible
       this.blade.visible = true;
@@ -267,7 +277,7 @@ export class Lightsaber extends Group {
       if (this.glowEmitter) {
         this.glowEmitter.visible = true;
         // Make the glow pulse slightly out of sync with the blade
-        const glowPulse = Math.sin(Date.now() * 0.006) * 0.4 + 1.3;
+        const glowPulse = Math.sin(Date.now() * 0.01) * 0.6 + 1.4;
         this.glowEmitter.scale.set(glowPulse, glowPulse, glowPulse);
       }
       
@@ -278,7 +288,7 @@ export class Lightsaber extends Group {
         this.bladeCore.material.opacity = 0.9;
         
         // Add stronger pulsing to the core
-        const corePulse = Math.sin(Date.now() * 0.01) * 0.15 + 0.95;
+        const corePulse = Math.sin(Date.now() * 0.03) * 0.4 + 0.9;
         this.bladeCore.scale.set(corePulse, 1, corePulse);
       }
       
@@ -289,19 +299,19 @@ export class Lightsaber extends Group {
         this.plasmaCore.material.opacity = 1.0;
         
         // Add rapid pulsing to the plasma core
-        const plasmaPulse = Math.sin(Date.now() * 0.015) * 0.3 + 0.9;
+        const plasmaPulse = Math.sin(Date.now() * 0.05) * 0.5 + 0.8;
         this.plasmaCore.scale.set(plasmaPulse, 1, plasmaPulse);
       }
       
       // Update blade light intensity with pulsing
       if (this.bladeLight) {
-        const lightPulse = Math.sin(Date.now() * 0.01) * 0.3 + 1.0;
+        const lightPulse = Math.sin(Date.now() * 0.025) * 0.5 + 1.2;
         this.bladeLight.intensity = this.glowIntensity * 1.5 * lightPulse;
       }
       
       // Update blade flare with pulsing
       if (this.bladeFlare) {
-        const flarePulse = Math.sin(Date.now() * 0.007) * 0.4 + 1.2;
+        const flarePulse = Math.sin(Date.now() * 0.02) * 0.6 + 1.3;
         this.bladeFlare.scale.set(flarePulse, flarePulse, flarePulse);
       }
     } else {

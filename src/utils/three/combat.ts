@@ -425,6 +425,11 @@ export class CombatSystem {
     // Skip if player is dead or not attacking
     if (!this.player.isAlive() || !this.player.isAttacking()) return;
     
+    // Skip if lightsaber is not active
+    if (!this.player.getLightsaber().isActive()) {
+      return;
+    }
+    
     // Check if we've already applied damage for this attack
     if (this.player.hasAppliedDamageInCurrentAttack()) {
       return;
