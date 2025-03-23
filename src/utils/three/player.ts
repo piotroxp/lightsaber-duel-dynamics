@@ -151,6 +151,13 @@ export class Player extends Group {
         return false;
       }
     }, false);
+
+    // Add right-click blocking with proper positioning
+    document.addEventListener('contextmenu', (event) => {
+      // Prevent the context menu from appearing on right-click
+      event.preventDefault();
+      return false;
+    });
   }
   
   private setupControls(): void {
@@ -162,10 +169,12 @@ export class Player extends Group {
         case 'KeyA': this.isMovingLeft = true; break;
         case 'KeyD': this.isMovingRight = true; break;
         case 'Space': 
+          event.preventDefault(); // Prevent browser scrolling
           if (this.isGrounded) {
             this.isJumping = true;
             this.jumpVelocity = this.jumpStrength;
             this.isGrounded = false;
+            console.log(`Jump initiated: velocity=${this.jumpVelocity}`);
           }
           break;
         case 'ControlLeft':
@@ -178,6 +187,11 @@ export class Player extends Group {
           // Toggle lightsaber on/off
           this.toggleLightsaber();
           break;
+      }
+      
+      // Prevent Ctrl+W from closing the browser
+      if (event.ctrlKey) {
+        event.preventDefault();
       }
     });
 
@@ -319,15 +333,18 @@ export class Player extends Group {
     // Skip if dead
     if (this.state === PlayerState.DEAD) return;
     
-    // Handle jumping and gravity
-    if (!this.isGrounded || this.isJumping) {
-      console.log(`Jumping state: isGrounded=${this.isGrounded}, isJumping=${this.isJumping}, vel=${this.jumpVelocity.toFixed(2)}`);
-      
+    // Always apply gravity regardless of isJumping flag
+    if (!this.isGrounded) {
       // Apply gravity to jump velocity
       this.jumpVelocity -= this.gravity * deltaTime;
       
-      // Update position based on velocity
+      // Update position based on velocity 
       this.position.y += this.jumpVelocity * deltaTime;
+      
+      // Log jump position for debugging
+      if (this.position.y > 0.01) {
+        console.log(`Jumping: y=${this.position.y.toFixed(2)}, vel=${this.jumpVelocity.toFixed(2)}`);
+      }
       
       // Check if we've hit the ground
       if (this.position.y <= 0) {
@@ -335,17 +352,11 @@ export class Player extends Group {
         this.jumpVelocity = 0;
         this.isGrounded = true;
         this.isJumping = false;
-        // Log for debugging
         console.log('Player landed on ground');
-      }
-      
-      // Debug log
-      if (this.isJumping) {
-        console.log(`Jumping: y=${this.position.y.toFixed(2)}, vel=${this.jumpVelocity.toFixed(2)}`);
       }
     }
     
-    // Force position to be at least 0 (never below ground)
+    // Force position to never go below ground
     if (this.position.y < 0) {
       this.position.y = 0;
       this.isGrounded = true;
@@ -921,9 +932,13 @@ export class Player extends Group {
       
     // If blocking, position saber in defensive stance
     if (this.state === PlayerState.BLOCKING) {
-      // Override target point to be in blocking position (in front of player)
+      // Move saber to a horizontal blocking position
+      const forward = this.camera.getWorldDirection(new Vector3()).multiplyScalar(1.2);
+      const right = new Vector3().crossVectors(forward, new Vector3(0, 1, 0)).normalize().multiplyScalar(0.8);
+      
       targetPoint.copy(this.camera.position)
-        .add(this.camera.getWorldDirection(new Vector3()).multiplyScalar(1.5))
+        .add(forward)
+        .add(right) // Add sideways component for horizontal positioning
         .add(new Vector3(0, 0.3, 0)); // Slightly raised
     }
     
