@@ -918,7 +918,7 @@ export class Lightsaber extends Group {
     });
     this.plasmaCore = new Mesh(plasmaCoreGeometry, plasmaCoreMaterial);
     this.plasmaCore.position.y = this.hiltLength + this.bladeLength / 2;
-    this.plasmaCore.renderOrder = 3; // Render last to ensure visibility
+    this.plasmaCore.renderOrder = 10; // Use a much higher render order to ensure it's always on top
     this.add(this.plasmaCore);
     
     // Create rounded tip for the plasma core
@@ -931,7 +931,7 @@ export class Lightsaber extends Group {
     const plasmaTip = new Mesh(plasmaTipGeometry, plasmaTipMaterial);
     plasmaTip.position.y = this.hiltLength + this.bladeLength;
     plasmaTip.name = "plasmaTip";
-    plasmaTip.renderOrder = 3; // Render last to ensure visibility
+    plasmaTip.renderOrder = 10; // Use a much higher render order
     this.add(plasmaTip);
     
     // 2. Create the middle core (white with slight color tint, pulsating)
@@ -939,13 +939,13 @@ export class Lightsaber extends Group {
     const coreMaterial = new MeshBasicMaterial({
       color: 0xffffff, // Pure white for middle core too
       transparent: true,
-      opacity: 0.7, // More translucent
+      opacity: 0.5, // More translucent
       blending: AdditiveBlending, // Use additive blending for better visibility
       side: DoubleSide
     });
     this.bladeCore = new Mesh(coreGeometry, coreMaterial);
     this.bladeCore.position.y = this.hiltLength + this.bladeLength / 2;
-    this.bladeCore.renderOrder = 2; // Render after outer blade
+    this.bladeCore.renderOrder = 5; // Higher render order
     this.add(this.bladeCore);
     
     // Create rounded tip for the core
@@ -967,7 +967,7 @@ export class Lightsaber extends Group {
     const bladeMaterial = new MeshBasicMaterial({
       color: this.bladeColor, // Use the blade color
       transparent: true,
-      opacity: 0.2, // Even more translucent outer layer
+      opacity: 0.3, // Less translucent for better visibility
       side: DoubleSide
     });
     this.blade = new Mesh(bladeGeometry, bladeMaterial);

@@ -48,6 +48,8 @@ export class Player extends Group {
   private isMovingBackward: boolean = false;
   private isMovingLeft: boolean = false;
   private isMovingRight: boolean = false;
+  private isJumping: boolean = false;
+  private isCrouching: boolean = false;
   private isAttackPressed: boolean = false;
   private isBlockPressed: boolean = false;
   private isLightsaberActive: boolean = false;
@@ -72,6 +74,20 @@ export class Player extends Group {
   private swingDuration = 500; // ms
   
   private lastRespawnTime: number = 0;
+  
+  // Physics parameters
+  private jumpVelocity: number = 0;
+  private gravity: number = 20; // Gravity strength
+  private jumpStrength: number = 8; // Initial jump velocity
+  private isGrounded: boolean = true;
+  private normalHeight: number = 1.7; // Normal camera height
+  private crouchHeight: number = 0.8; // Crouched camera height
+  private currentHeight: number = 1.7; // Current camera height
+  
+  // Add momentum to lightsaber movement
+  private readonly saberPositions: Vector3[] = []; // Store recent positions
+  private readonly positionHistorySize = 10; // Number of positions to keep
+  private readonly saberInertia = 0.85; // Higher = more inertia (0-1)
   
   constructor(scene: Scene, camera: Camera) {
     super();
@@ -122,7 +138,7 @@ export class Player extends Group {
       this.mousePosition.y = -(event.clientY / window.innerHeight) * 2 + 1;
       
       // Update lightsaber position based on mouse
-      this.updateLightsaberFromMouse();
+      this.updateLightsaberWithMomentum();
     });
   }
   
@@ -134,6 +150,19 @@ export class Player extends Group {
         case 'KeyS': this.isMovingBackward = true; break;
         case 'KeyA': this.isMovingLeft = true; break;
         case 'KeyD': this.isMovingRight = true; break;
+        case 'Space': 
+          if (this.isGrounded) {
+            this.isJumping = true;
+            this.jumpVelocity = this.jumpStrength;
+            this.isGrounded = false;
+          }
+          break;
+        case 'ControlLeft':
+        case 'ControlRight':
+          if (!this.isJumping) {
+            this.isCrouching = true;
+          }
+          break;
         case 'Digit1': 
           // Toggle lightsaber on/off
           this.toggleLightsaber();
@@ -147,6 +176,10 @@ export class Player extends Group {
         case 'KeyS': this.isMovingBackward = false; break;
         case 'KeyA': this.isMovingLeft = false; break;
         case 'KeyD': this.isMovingRight = false; break;
+        case 'ControlLeft':
+        case 'ControlRight':
+          this.isCrouching = false;
+          break;
       }
     });
     
@@ -275,8 +308,58 @@ export class Player extends Group {
     // Skip if dead
     if (this.state === PlayerState.DEAD) return;
     
-    // Update lightsaber position
-    this.updateLightsaberPosition();
+    // Handle jumping and gravity
+    if (!this.isGrounded || this.isJumping) {
+      // Apply gravity to jump velocity
+      this.jumpVelocity -= this.gravity * deltaTime;
+      
+      // Update position based on velocity
+      this.position.y += this.jumpVelocity * deltaTime;
+      
+      // Check if we've hit the ground
+      if (this.position.y <= 0) {
+        this.position.y = 0;
+        this.jumpVelocity = 0;
+        this.isGrounded = true;
+        this.isJumping = false;
+        // Log for debugging
+        console.log('Player landed on ground');
+      }
+      
+      // Debug log
+      if (this.isJumping) {
+        console.log(`Jumping: y=${this.position.y.toFixed(2)}, vel=${this.jumpVelocity.toFixed(2)}`);
+      }
+    }
+    
+    // Handle crouching
+    if (this.isCrouching && this.isGrounded) {
+      // Smoothly transition to crouch height
+      this.currentHeight = Math.max(
+        this.crouchHeight,
+        this.currentHeight - 5 * deltaTime
+      );
+      
+      // Reduce movement speed while crouching
+      this.moveSpeed = 2.5;
+    } else {
+      // Smoothly transition back to normal height
+      this.currentHeight = Math.min(
+        this.normalHeight,
+        this.currentHeight + 5 * deltaTime
+      );
+      
+      // Reset movement speed
+      this.moveSpeed = 5;
+    }
+    
+    // Update camera height
+    if (this.camera) {
+      this.camera.position.y = this.currentHeight;
+    }
+    
+    // Update lightsaber position with momentum
+    this.updateLightsaberWithMomentum();
     
     // Update lightsaber visuals
     if (this.lightsaber) {
@@ -792,34 +875,58 @@ export class Player extends Group {
     return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
   }
   
-  // New method to update lightsaber position based on mouse
-  private updateLightsaberFromMouse(): void {
+  // New method to update lightsaber position with momentum
+  private updateLightsaberWithMomentum(): void {
     if (!this.lightsaber || this.state === PlayerState.DEAD) return;
     
     // Set raycaster from camera using mouse position
     this.raycaster.setFromCamera(this.mousePosition, this.camera);
     
-    // Calculate a point in space where the saber should point
-    const targetDistance = 3; // How far ahead to project
-    this.targetPoint.copy(this.raycaster.ray.direction).multiplyScalar(targetDistance).add(this.camera.position);
+    // Calculate target point (further away to place tip in front)
+    const targetDistance = 4; // Increased distance for better reach
+    const targetPoint = new Vector3();
+    targetPoint.copy(this.raycaster.ray.direction)
+      .multiplyScalar(targetDistance)
+      .add(this.camera.position);
     
-    // Only update when not swinging
-    if (!this.isSwinging) {
-      // Calculate direction from lightsaber to target
-      const direction = new Vector3().subVectors(this.targetPoint, this.lightsaber.getWorldPosition(new Vector3()));
-      
-      // Convert world direction to local rotation
-      const lookAtMatrix = new Matrix4().lookAt(
-        new Vector3(0, 0, 0),
-        direction,
-        new Vector3(0, 1, 0)
-      );
-      const targetRotation = new Quaternion().setFromRotationMatrix(lookAtMatrix);
-      
-      // Smoothly interpolate current rotation to target
-      const currentRotation = this.lightsaber.quaternion.clone();
-      this.lightsaber.quaternion.slerp(targetRotation, 0.1);
+    // Add to position history
+    this.saberPositions.push(targetPoint.clone());
+    
+    // Keep history at fixed size
+    if (this.saberPositions.length > this.positionHistorySize) {
+      this.saberPositions.shift();
     }
+    
+    // Calculate weighted average position (more recent = higher weight)
+    const weightedPosition = new Vector3();
+    let totalWeight = 0;
+    
+    this.saberPositions.forEach((pos, index) => {
+      // Weight increases with index (more recent positions have higher weight)
+      const weight = index + 1;
+      weightedPosition.add(pos.clone().multiplyScalar(weight));
+      totalWeight += weight;
+    });
+    
+    // Normalize by total weight
+    weightedPosition.divideScalar(totalWeight);
+    
+    // Calculate direction and apply to lightsaber
+    const direction = new Vector3().subVectors(
+      weightedPosition, 
+      this.lightsaber.getWorldPosition(new Vector3())
+    );
+    
+    // Convert world direction to local rotation with lag
+    const lookAtMatrix = new Matrix4().lookAt(
+      new Vector3(0, 0, 0),
+      direction,
+      new Vector3(0, 1, 0)
+    );
+    const targetRotation = new Quaternion().setFromRotationMatrix(lookAtMatrix);
+    
+    // Apply inertia using slerp with custom factor
+    this.lightsaber.quaternion.slerp(targetRotation, 1 - this.saberInertia);
   }
   
   getLastRespawnTime(): number {

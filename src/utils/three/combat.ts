@@ -134,6 +134,10 @@ export class CombatSystem {
     // Skip if we've already applied damage for this attack
     if (this.player.hasAppliedDamageInCurrentAttack()) return;
     
+    // Skip if lightsaber is not active
+    const playerLightsaber = this.player.getLightsaber();
+    if (!playerLightsaber || !playerLightsaber.isActive()) return;
+    
     // Get player lightsaber position
     const playerSaberPosition = this.player.getLightsaberPosition();
     
