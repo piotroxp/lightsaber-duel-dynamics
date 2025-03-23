@@ -1,5 +1,4 @@
-
-import { TextureLoader, Texture, RepeatWrapping } from 'three';
+import { TextureLoader, Texture, RepeatWrapping, SRGBColorSpace } from 'three';
 
 // Fallback texture data - a 1x1 white pixel
 const fallbackTextureData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
@@ -17,7 +16,7 @@ export const loadTextureWithFallback = async (path: string): Promise<Texture> =>
         texture.wrapT = RepeatWrapping;
         texture.repeat.set(1, 1);
         // Use colorSpace instead of encoding for newer Three.js
-        texture.colorSpace = 'srgb';
+        texture.colorSpace = SRGBColorSpace;
         resolve(texture);
       },
       // Progress callback
@@ -33,7 +32,7 @@ export const loadTextureWithFallback = async (path: string): Promise<Texture> =>
             fallbackTexture.wrapS = RepeatWrapping;
             fallbackTexture.wrapT = RepeatWrapping;
             fallbackTexture.repeat.set(10, 10);
-            fallbackTexture.colorSpace = 'srgb';
+            fallbackTexture.colorSpace = SRGBColorSpace;
             resolve(fallbackTexture);
           },
           undefined,

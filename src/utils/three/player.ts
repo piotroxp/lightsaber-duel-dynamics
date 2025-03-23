@@ -10,7 +10,9 @@ import {
   MeshBasicMaterial,
   SphereGeometry,
   BoxGeometry,
-  CylinderGeometry
+  CylinderGeometry,
+  Matrix4,
+  Vector2
 } from 'three';
 import { Lightsaber } from './lightsaber';
 import gameAudio from './audio';
@@ -20,7 +22,7 @@ import { createHitEffect } from './effects';
 declare global {
   namespace THREE {
     interface Object3DEventMap {
-      healthChanged: { health: number, maxHealth: number };
+      healthChanged: { detail: { health: number, maxHealth: number } };
       died: {};
     }
   }
@@ -59,6 +61,17 @@ export class Player extends Group {
   private playerModel: Group | null = null;
   private lightsaberOffset: Vector3 = new Vector3(0.09, -0.49, -0.75);
   private damageAppliedInCurrentAttack: boolean = false;
+  public clickedOnUI: boolean = false;
+  
+  // Add mouse position tracking
+  private mousePosition = new Vector2();
+  private raycaster = new Raycaster();
+  private targetPoint = new Vector3();
+  private isSwinging = false;
+  private swingStartTime = 0;
+  private swingDuration = 500; // ms
+  
+  private lastRespawnTime: number = 0;
   
   constructor(scene: Scene, camera: Camera) {
     super();
@@ -80,16 +93,16 @@ export class Player extends Group {
     
     // Create lightsaber with proper options object
     this.lightsaber = new Lightsaber({
-      color: '#3366ff',
+      color: '#0066ff', // Brighter blue color
       bladeLength: 1.2,
       hiltLength: 0.25,
-      glowIntensity: 1.5
+      glowIntensity: 2.0 // Increased glow intensity for better pulsation
     });
     // Add lightsaber to camera for first-person view
     this.camera.add(this.lightsaber);
     
     // Position lightsaber at bottom right of view
-    this.lightsaber.position.set(0.6, -0.1, -0.3);
+    this.lightsaber.position.set(0.4, -0.3, -0.5);
     this.lightsaber.rotation.x = Math.PI * (-0.13);
     
     // Add keyboard event listeners
@@ -98,7 +111,19 @@ export class Player extends Group {
     // Activate lightsaber with delay for effect
     setTimeout(() => {
       this.lightsaber.activate();
+      // Force update to ensure pulsation starts immediately
+      this.lightsaber.update(0.016);
     }, 1000);
+    
+    // Track mouse movement for saber control
+    document.addEventListener('mousemove', (event) => {
+      // Calculate normalized device coordinates (-1 to +1)
+      this.mousePosition.x = (event.clientX / window.innerWidth) * 2 - 1;
+      this.mousePosition.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      
+      // Update lightsaber position based on mouse
+      this.updateLightsaberFromMouse();
+    });
   }
   
   private setupControls(): void {
@@ -125,9 +150,56 @@ export class Player extends Group {
       }
     });
     
-    // Mouse controls
-    document.addEventListener('mousedown', this.handleMouseDown.bind(this));
-    document.addEventListener('mouseup', this.handleMouseUp.bind(this));
+    // Mouse controls for attacking
+    document.addEventListener('mousedown', (event) => {
+      // Skip if clicking on a UI element
+      if (event.target instanceof HTMLElement && 
+          (event.target.closest('.color-picker') || 
+           event.target.closest('button') || 
+           event.target.closest('input'))) {
+        this.clickedOnUI = true;
+        console.log("Clicked on UI element, skipping attack");
+        return;
+      }
+      
+      // Not clicking on UI
+      this.clickedOnUI = false;
+      console.log("Mouse down - not on UI");
+      
+      if (event.button === 0) { // Left click
+        // Directly set attack state
+        this.isAttackPressed = true;
+        this.state = PlayerState.ATTACKING;
+        // Directly trigger attack
+        this.startAttack();
+        console.log("Left click - attack triggered");
+      } else if (event.button === 2) { // Right click
+        // Directly set block state
+        this.isBlockPressed = true;
+        this.state = PlayerState.BLOCKING;
+        // Directly trigger block
+        this.startBlock();
+        console.log("Right click - block triggered");
+      }
+    });
+    
+    // Reset UI click flag on mouseup
+    document.addEventListener('mouseup', (event) => {
+      this.clickedOnUI = false;
+      
+      // Reset attack/block state on mouse up
+      if (event.button === 0) { // Left click
+        this.isAttackPressed = false;
+        if (this.state === PlayerState.ATTACKING) {
+          this.state = PlayerState.IDLE;
+        }
+      } else if (event.button === 2) { // Right click
+        this.isBlockPressed = false;
+        if (this.state === PlayerState.BLOCKING) {
+          this.state = PlayerState.IDLE;
+        }
+      }
+    });
   }
   
   private handleKeyDown(event: KeyboardEvent): void {
@@ -174,12 +246,20 @@ export class Player extends Group {
   }
   
   private handleMouseDown(event: MouseEvent): void {
+    // Skip if clicking on a UI element
+    if (event.target instanceof HTMLElement && 
+        (event.target.closest('.color-picker') || 
+         event.target.closest('button') || 
+         event.target.closest('input'))) {
+      return;
+    }
+    
     if (event.button === 0) { // Left mouse button
       this.isAttackPressed = true;
-      this.attack();
+      this.startAttack();
     } else if (event.button === 2) { // Right mouse button
       this.isBlockPressed = true;
-      this.block();
+      this.startBlock();
     }
   }
   
@@ -203,6 +283,18 @@ export class Player extends Group {
       // Only allow attacks when lightsaber is active
       if (!this.isLightsaberActive && this.isAttackPressed) {
         this.isAttackPressed = false;
+      }
+      
+      // Update lightsaber
+      this.lightsaber.update(deltaTime);
+      
+      // Handle attack state
+      if (this.isAttackPressed && this.state === PlayerState.ATTACKING) {
+        // Trigger lightsaber swing animation if not already swinging
+        if (!this.lightsaber.isSwinging) {
+          this.lightsaber.playSwingSound();
+          // Add swing animation here
+        }
       }
       
       // Make sure lightsaber state is consistent
@@ -250,6 +342,9 @@ export class Player extends Group {
         this.playerModel.lookAt(this.position.clone().add(direction));
       }
     }
+    
+    // Update health bar if it exists
+    this.updateHealthBar();
   }
   
   private handleMovement(deltaTime: number): void {
@@ -586,5 +681,171 @@ export class Player extends Group {
       // Play deactivation sound
       gameAudio.playSound('lightsaberOff', { volume: 0.8 });
     }
+  }
+  
+  private updateHealthBar(): void {
+    // Implementation of updateHealthBar method
+  }
+  
+  startAttack(): void {
+    if (this.state === PlayerState.DEAD) return;
+    
+    this.isAttackPressed = true;
+    this.state = PlayerState.ATTACKING;
+    this.lastAttackTime = performance.now() / 1000;
+    
+    // Start a swing animation toward the mouse position
+    this.startSwingTowardsMouse();
+    
+    // Trigger lightsaber swing animation
+    if (this.lightsaber) {
+      this.lightsaber.playSwingSound();
+    }
+    
+    console.log("Player attack started");
+  }
+  
+  startBlock(): void {
+    if (this.state === PlayerState.DEAD) return;
+    
+    this.isBlockPressed = true;
+    this.state = PlayerState.BLOCKING;
+    this.lastBlockTime = performance.now() / 1000;
+    
+    console.log("Player block started");
+  }
+  
+  // New method to swing toward mouse position
+  private startSwingTowardsMouse(): void {
+    if (this.isSwinging) return;
+    
+    this.isSwinging = true;
+    this.swingStartTime = Date.now();
+    
+    // Store original lightsaber position and rotation
+    const originalPosition = this.lightsaber.position.clone();
+    const originalRotation = this.lightsaber.quaternion.clone();
+    
+    // Calculate target position (extend toward mouse point)
+    const targetPosition = originalPosition.clone();
+    targetPosition.z -= 0.3; // Extend forward
+    
+    // Set raycaster from camera using mouse position
+    this.raycaster.setFromCamera(this.mousePosition, this.camera);
+    
+    // Calculate world target point
+    const targetDistance = 3;
+    this.targetPoint.copy(this.raycaster.ray.direction).multiplyScalar(targetDistance).add(this.camera.position);
+    
+    // Convert to local space of camera
+    const localTargetPoint = this.targetPoint.clone().sub(this.camera.position);
+    
+    // Calculate target rotation to point at mouse
+    const targetRotation = new Quaternion();
+    const lookAtMatrix = new Matrix4().lookAt(
+      new Vector3(0, 0, 0),
+      localTargetPoint,
+      new Vector3(0, 1, 0)
+    );
+    targetRotation.setFromRotationMatrix(lookAtMatrix);
+    
+    // Animate the swing
+    const animate = () => {
+      const elapsed = Date.now() - this.swingStartTime;
+      const progress = Math.min(elapsed / this.swingDuration, 1);
+      
+      // Use easing for natural motion
+      const easedProgress = this.easeInOutQuad(progress);
+      
+      // Move lightsaber forward and back
+      const swingProgress = Math.sin(easedProgress * Math.PI);
+      const currentPosition = new Vector3().lerpVectors(
+        originalPosition,
+        targetPosition,
+        swingProgress
+      );
+      this.lightsaber.position.copy(currentPosition);
+      
+      // Rotate lightsaber toward target
+      this.lightsaber.quaternion.slerpQuaternions(
+        originalRotation,
+        targetRotation,
+        swingProgress
+      );
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // Reset position and rotation
+        this.lightsaber.position.copy(originalPosition);
+        this.lightsaber.quaternion.copy(originalRotation);
+        this.isSwinging = false;
+      }
+    };
+    
+    // Start animation
+    animate();
+  }
+  
+  // Easing function for smooth animation
+  private easeInOutQuad(t: number): number {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  }
+  
+  // New method to update lightsaber position based on mouse
+  private updateLightsaberFromMouse(): void {
+    if (!this.lightsaber || this.state === PlayerState.DEAD) return;
+    
+    // Set raycaster from camera using mouse position
+    this.raycaster.setFromCamera(this.mousePosition, this.camera);
+    
+    // Calculate a point in space where the saber should point
+    const targetDistance = 3; // How far ahead to project
+    this.targetPoint.copy(this.raycaster.ray.direction).multiplyScalar(targetDistance).add(this.camera.position);
+    
+    // Only update when not swinging
+    if (!this.isSwinging) {
+      // Calculate direction from lightsaber to target
+      const direction = new Vector3().subVectors(this.targetPoint, this.lightsaber.getWorldPosition(new Vector3()));
+      
+      // Convert world direction to local rotation
+      const lookAtMatrix = new Matrix4().lookAt(
+        new Vector3(0, 0, 0),
+        direction,
+        new Vector3(0, 1, 0)
+      );
+      const targetRotation = new Quaternion().setFromRotationMatrix(lookAtMatrix);
+      
+      // Smoothly interpolate current rotation to target
+      const currentRotation = this.lightsaber.quaternion.clone();
+      this.lightsaber.quaternion.slerp(targetRotation, 0.1);
+    }
+  }
+  
+  getLastRespawnTime(): number {
+    return this.lastRespawnTime;
+  }
+  
+  respawn(): void {
+    // Reset health
+    this.health = this.maxHealth;
+    
+    // Reset position
+    this.position.set(0, 0, 0);
+    
+    // Reset state
+    this.state = PlayerState.IDLE;
+    
+    // Record respawn time
+    this.lastRespawnTime = performance.now() / 1000;
+    
+    // Dispatch event
+    this.dispatchEvent({ 
+      type: 'healthChanged', 
+      detail: { 
+        health: this.health, 
+        maxHealth: this.maxHealth 
+      } 
+    });
   }
 }

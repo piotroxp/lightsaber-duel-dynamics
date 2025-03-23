@@ -124,14 +124,61 @@ export class CombatSystem {
   }
   
   private checkPlayerAttacks(deltaTime: number): void {
-    // Check for combat interactions
-    this.checkCombatInteractions(deltaTime);
+    // Skip if player is not attacking or is dead
+    if (!this.player.isAttacking() || !this.player.isAlive()) return;
     
-    // Check for saber collisions
-    this.checkSaberCollisions();
+    // Skip if player just respawned (add a small delay)
+    const timeSinceRespawn = performance.now() / 1000 - this.player.getLastRespawnTime();
+    if (timeSinceRespawn < 2.0) return; // Longer delay to prevent accidental hits
     
-    // Update existing combat effects
-    this.updateCombatEffects(deltaTime);
+    // Skip if we've already applied damage for this attack
+    if (this.player.hasAppliedDamageInCurrentAttack()) return;
+    
+    // Get player lightsaber position
+    const playerSaberPosition = this.player.getLightsaberPosition();
+    
+    // Check for hits on each enemy
+    for (const enemy of this.enemies) {
+      // Skip if enemy just respawned
+      const enemyTimeSinceRespawn = performance.now() / 1000 - enemy.getLastRespawnTime();
+      if (enemyTimeSinceRespawn < 2.0) continue; // Use continue instead of return to check other enemies
+      
+      // Skip if enemy is already dead
+      if (!enemy.isAlive()) continue;
+      
+      // Get enemy position (more precise - target the torso)
+      const enemyPosition = enemy.position.clone().add(new Vector3(0, 1.0, 0));
+      const distance = playerSaberPosition.distanceTo(enemyPosition);
+      
+      // Check if close enough to hit
+      if (distance < 1.5) {
+        console.log("⚔️ HIT ENEMY! Distance:", distance);
+        
+        // Apply damage to enemy
+        const damage = 10;
+        enemy.takeDamage(damage);
+        
+        // Mark that we've applied damage for this attack
+        this.player.setDamageAppliedInCurrentAttack(true);
+        
+        // Reset damage flag after a delay
+        setTimeout(() => {
+          this.player.setDamageAppliedInCurrentAttack(false);
+        }, 800);
+        
+        // Create clash effect
+        createSaberClashEffect(
+          this.scene,
+          playerSaberPosition,
+          '#3366ff'
+        );
+        
+        // Play clash sound
+        gameAudio.playSound('lightsaberClash', { volume: 0.8 });
+        
+        break; // Only hit one enemy per attack
+      }
+    }
   }
   
   private checkEnemyAttacks(deltaTime: number): void {
@@ -425,8 +472,28 @@ export class CombatSystem {
     // Skip if player is dead or not attacking
     if (!this.player.isAlive() || !this.player.isAttacking()) return;
     
-    // Skip if lightsaber is not active
+    // CRITICAL FIX: Skip if lightsaber is not active
     if (!this.player.getLightsaber().isActive()) {
+      return;
+    }
+    
+    // CRITICAL FIX: Skip if player is too far from enemies (prevents remote killing)
+    const playerPosition = this.player.position;
+    let closestEnemyDistance = Infinity;
+    
+    for (const enemy of this.enemies) {
+      if (!enemy.isAlive()) continue;
+      const distance = enemy.position.distanceTo(playerPosition);
+      closestEnemyDistance = Math.min(closestEnemyDistance, distance);
+    }
+    
+    // If player is too far from any enemy, skip attack check
+    if (closestEnemyDistance > 3) {
+      return;
+    }
+    
+    // Skip if the player clicked on a UI element
+    if (this.player.clickedOnUI) {
       return;
     }
     
@@ -445,8 +512,17 @@ export class CombatSystem {
       const enemyTorsoPosition = enemyPosition.clone().add(new Vector3(0, 1.0, 0));
       const distance = playerSaberPosition.distanceTo(enemyTorsoPosition);
       
+      // Get player's facing direction
+      const playerDirection = this.player.getDirection();
+      
+      // Calculate vector from player to enemy
+      const playerToEnemy = enemyPosition.clone().sub(playerPosition).normalize();
+      
+      // Calculate dot product to check if player is facing the enemy
+      const facingEnemy = playerDirection.dot(playerToEnemy) > 0.3; // At least somewhat facing the enemy
+      
       // More reasonable hit distance
-      if (distance < 2.0) {
+      if (distance < 1.5 && facingEnemy) {
         console.log("🎯 HIT DETECTED! Distance:", distance);
         
         // Apply damage more consistently

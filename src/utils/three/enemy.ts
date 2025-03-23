@@ -3,6 +3,15 @@ import { Lightsaber } from './lightsaber';
 import { createSaberClashEffect, createHitEffect } from './effects';
 import gameAudio from './audio';
 
+// Extend Three.js event types with our custom events
+declare global {
+  namespace THREE {
+    interface Object3DEventMap {
+      respawned: {};
+    }
+  }
+}
+
 export interface EnemyOptions {
   health?: number;
   speed?: number;
@@ -30,8 +39,8 @@ export class Enemy extends Group {
   declare rotateY: (angle: number) => this;
 
   // Stats
-  private health: number;
-  private maxHealth: number;
+  private health: number = 100;
+  private maxHealth: number = 100;
   private speed: number;
   private attackRange: number;
   private attackDamage: number;
@@ -69,6 +78,8 @@ export class Enemy extends Group {
   private isRespawning: boolean = false;
   private respawnTimer: number = 0;
   private respawnDelay: number = 5; // 5 seconds to respawn
+  
+  private lastRespawnTime: number = 0;
   
   constructor(scene: Scene, options: EnemyOptions = {}) {
     super();
@@ -276,26 +287,45 @@ export class Enemy extends Group {
   }
   
   takeDamage(amount: number): void {
-    this.health = Math.max(0, this.health - amount);
+    if (this.isDead || this.isRespawning) return;
     
-    // Dispatch health update event
-    window.dispatchEvent(new CustomEvent('enemyHealthChanged', {
-      detail: {
+    // If blocking, reduce damage
+    if (this.blocking) {
+      amount *= 0.2; // 80% damage reduction when blocking
+    }
+    
+    // Apply damage
+    this.health -= amount;
+    
+    // Clamp health to 0-100
+    this.health = Math.max(0, this.health);
+    
+    // Update the health bar UI
+    const healthBar = document.getElementById('enemy-health-bar');
+    if (healthBar) {
+      const percent = (this.health / this.maxHealth) * 100;
+      healthBar.style.width = `${percent}%`;
+    }
+    
+    // Dispatch damage event
+    this.dispatchEvent({ 
+      type: 'damaged', 
+      detail: { 
         health: this.health,
-        maxHealth: this.maxHealth
-      }
-    }));
+        maxHealth: this.maxHealth,
+        damage: amount 
+      } 
+    });
     
-    createHitEffect(this.scene, this.position.clone().add(new Vector3(0, 1.2, 0)), '#ff0000');
-    gameAudio.playSound('enemyHit', { volume: 0.7 });
-    
-    // Apply stagger effect
-    this.applyStagger(0.5);
-    
-    // Check for death
+    // Check if dead
     if (this.health <= 0) {
-      console.log("[ENEMY] Enemy died!");
       this.die();
+    } else {
+      // Play hit sound
+      gameAudio.playSound('lightsaberHit', { volume: 0.5 });
+      
+      // Visual feedback - flash red (using a safer method)
+      this.flashDamageVisual();
     }
   }
   
@@ -640,10 +670,19 @@ export class Enemy extends Group {
     this.attacking = false;
     this.blocking = false;
     
+    // Record respawn time
+    this.lastRespawnTime = performance.now() / 1000;
+    
     // Ensure lightsaber is active and red
     if (this.lightsaber) {
       this.lightsaber.activate();
       this.lightsaber.setColor('#ff0000'); // Force red color on respawn
+    }
+    
+    // Update the health bar UI
+    const healthBar = document.getElementById('enemy-health-bar');
+    if (healthBar) {
+      healthBar.style.width = '100%';
     }
     
     // Dispatch event
@@ -681,5 +720,78 @@ export class Enemy extends Group {
   // Add method to add damage visual
   private addDamageVisual(): void {
     // Implementation of adding damage visual
+  }
+
+  getLastRespawnTime(): number {
+    return this.lastRespawnTime;
+  }
+
+  // Add a safe method for damage visual feedback
+  flashDamageVisual(): void {
+    // Gradual hit coloring
+    const startTime = performance.now();
+    const duration = 500; // ms
+    const maxIntensity = 1.0;
+    
+    // Store original colors
+    const originalColors = new Map();
+    
+    this.traverse((child) => {
+      if (child instanceof Mesh && child.material instanceof MeshStandardMaterial) {
+        // Store original color
+        originalColors.set(child, {
+          color: child.material.color.clone(),
+          emissive: child.material.emissive.clone()
+        });
+      }
+    });
+    
+    // Animate the hit effect
+    const animate = () => {
+      const elapsed = performance.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Use sine curve for smooth fade in/out
+      const intensity = Math.sin(progress * Math.PI) * maxIntensity;
+      
+      // Apply color based on intensity
+      this.traverse((child) => {
+        if (child instanceof Mesh && 
+            child.material instanceof MeshStandardMaterial && 
+            originalColors.has(child)) {
+          
+          const original = originalColors.get(child);
+          
+          // Blend between original color and red
+          const r = Math.min(1, original.color.r + intensity);
+          const g = Math.max(0, original.color.g - intensity * 0.8);
+          const b = Math.max(0, original.color.b - intensity * 0.8);
+          
+          child.material.color.setRGB(r, g, b);
+          
+          // Add emissive glow
+          child.material.emissive.setRGB(intensity * 0.5, 0, 0);
+        }
+      });
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // Reset to original colors
+        this.traverse((child) => {
+          if (child instanceof Mesh && 
+              child.material instanceof MeshStandardMaterial && 
+              originalColors.has(child)) {
+            
+            const original = originalColors.get(child);
+            child.material.color.copy(original.color);
+            child.material.emissive.copy(original.emissive);
+          }
+        });
+      }
+    };
+    
+    // Start animation
+    animate();
   }
 }
