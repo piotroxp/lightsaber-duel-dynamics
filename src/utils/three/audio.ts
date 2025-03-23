@@ -4,6 +4,7 @@ interface SoundOptions {
   loop?: boolean;
   volume?: number;
   position?: { x: number; y: number; z: number };
+  detune?: number;
 }
 
 interface Sound {

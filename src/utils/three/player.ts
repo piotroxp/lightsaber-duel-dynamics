@@ -802,20 +802,52 @@ export class Player extends Group {
   
   startAttack(): void {
     if (this.state === PlayerState.DEAD) return;
+    if (this.state === PlayerState.ATTACKING) return;
     
-    this.isAttackPressed = true;
-    this.state = PlayerState.ATTACKING;
-    this.lastAttackTime = performance.now() / 1000;
+    const now = performance.now() / 1000;
     
-    // Start a swing animation toward the mouse position
-    this.startSwingTowardsMouse();
-    
-    // Trigger lightsaber swing animation
-    if (this.lightsaber) {
-      this.lightsaber.playSwingSound();
+    // Check cooldown
+    if (now - this.lastAttackTime < this.attackCooldown) {
+      return;
     }
     
-    console.log("Player attack started");
+    // Set state and reset flags
+    this.state = PlayerState.ATTACKING;
+    this.lastAttackTime = now;
+    this.damageAppliedInCurrentAttack = false;
+    
+    // Calculate attack direction based on movement or facing
+    let swingDirection = new Vector3();
+    
+    if (this.isMovingForward || this.isMovingBackward || this.isMovingLeft || this.isMovingRight) {
+      // Use movement direction for swing
+      if (this.isMovingForward) swingDirection.z -= 1;
+      if (this.isMovingBackward) swingDirection.z += 1;
+      if (this.isMovingLeft) swingDirection.x -= 1;
+      if (this.isMovingRight) swingDirection.x += 1;
+    } else {
+      // Use look direction
+      swingDirection = this.getDirection();
+    }
+    
+    // Add some randomness to make each swing feel different
+    swingDirection.x += (Math.random() - 0.5) * 0.3;
+    swingDirection.z += (Math.random() - 0.5) * 0.3;
+    
+    // Trigger the lightsaber swing physics
+    if (this.lightsaber) {
+      this.lightsaber.triggerSwing(swingDirection);
+    }
+    
+    // Play attack sound
+    gameAudio.playSound('lightsaberSwing', { volume: 0.6 });
+    
+    // Reset attack state after a delay
+    setTimeout(() => {
+      if (this.state === PlayerState.ATTACKING) {
+        this.state = PlayerState.IDLE;
+      }
+    }, 500);
   }
   
   startBlock(): void {

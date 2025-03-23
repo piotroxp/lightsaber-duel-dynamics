@@ -82,6 +82,9 @@ export class Enemy extends Group {
   
   private lastRespawnTime: number = 0;
   
+  // Add these damage visual indicators
+  private damageMarks: Mesh[] = [];
+  
   constructor(scene: Scene, options: EnemyOptions = {}) {
     super();
     
@@ -226,108 +229,69 @@ export class Enemy extends Group {
     this.hasAppliedDamage = false;
     this.lastAttackTime = performance.now() / 1000;
     
-    // Store the most recent player position from updateAggressive
-    if (!this.targetPosition || this.targetPosition.lengthSq() === 0) {
-      console.warn("No target position available, using forward direction");
-      // Create a default forward position if target is not set
-      this.targetPosition = new Vector3(
-        this.position.x + 0, 
-        this.position.y + 1, 
-        this.position.z + 1
-      );
-    }
+    // Calculate direction to target
+    const attackDirection = new Vector3()
+      .subVectors(this.targetPosition, this.position)
+      .normalize();
     
+    // Keep direction horizontal
+    attackDirection.y = 0;
+    attackDirection.normalize();
+    
+    // Trigger lightsaber swing physics
     if (this.lightsaber) {
       // Ensure lightsaber is active
       if (!this.lightsaber.isActive()) {
         this.lightsaber.activate();
       }
       
-      // Calculate direction to target
-      const attackDirection = new Vector3()
-        .subVectors(this.targetPosition, this.position)
-        .normalize();
-      
-      // Keep direction horizontal
-      attackDirection.y = 0;
-      attackDirection.normalize();
-      
-      // Use default forward direction if calculated direction is invalid
-      if (isNaN(attackDirection.x) || isNaN(attackDirection.z)) {
-        attackDirection.set(0, 0, 1);
-      }
-      
-      console.log("Attacking toward:", this.targetPosition);
-      console.log("Attack direction:", attackDirection);
-      
-      // Face the target
-      this.lookAt(
-        this.position.x + attackDirection.x,
-        this.position.y,
-        this.position.z + attackDirection.z
-      );
-      
-      // Swing the lightsaber
-      try {
-        this.lightsaber.swingAt(0, attackDirection);
-      } catch (error) {
-        console.error("Error during swing:", error);
-        this.lightsaber.swing("none");
-      }
-      
-      // Play sound effect
-      gameAudio.playSound('lightsaberSwing', { volume: 0.8 });
+      // Trigger swing with attack direction
+      this.lightsaber.triggerSwing(attackDirection);
     }
     
-    // Reset state after animation completes
-    setTimeout(() => {
-      if (this.state === EnemyState.ATTACKING) {
-        this.state = EnemyState.IDLE;
-      }
-    }, 800);
+    // Play attack sound
+    gameAudio.playSound('lightsaberSwing', { volume: 0.6, detune: -300 }); // Lower pitch for enemy
   }
   
-  takeDamage(amount: number): void {
-    if (this.isDead || this.isRespawning) return;
+  takeDamage(amount: number, attackerPosition: Vector3 = new Vector3()): void {
+    // Skip if already dead
+    if (this.state === EnemyState.DEAD) return;
     
-    // If blocking, reduce damage
-    if (this.blocking) {
-      amount *= 0.2; // 80% damage reduction when blocking
-    }
+    this.health = Math.max(0, this.health - amount);
+    console.log(`Enemy taking ${amount} damage. Health: ${this.health}/${this.maxHealth}`);
     
-    // Apply damage
-    this.health -= amount;
-    
-    // Clamp health to 0-100
-    this.health = Math.max(0, this.health);
+    // Show damage visually
+    this.flashDamageVisual();
+    this.addDamageVisual();
     
     // Update the health bar UI
     const healthBar = document.getElementById('enemy-health-bar');
     if (healthBar) {
-      const percent = (this.health / this.maxHealth) * 100;
-      healthBar.style.width = `${percent}%`;
+      const healthPercent = (this.health / this.maxHealth) * 100;
+      healthBar.style.width = `${healthPercent}%`;
+      
+      // Change color based on health
+      if (healthPercent > 60) {
+        healthBar.style.backgroundColor = '#00ff00'; // Green
+      } else if (healthPercent > 30) {
+        healthBar.style.backgroundColor = '#ffff00'; // Yellow
+      } else {
+        healthBar.style.backgroundColor = '#ff0000'; // Red
+      }
     }
-    
-    // Dispatch damage event
-    this.dispatchEvent({ 
-      type: 'damaged' as any, 
-      detail: { 
-        health: this.health,
-        maxHealth: this.maxHealth,
-        damage: amount 
-      } 
-    });
     
     // Check if dead
     if (this.health <= 0) {
       this.die();
-    } else {
-      // Play hit sound
-      gameAudio.playSound('lightsaberHit', { volume: 0.5 });
-      
-      // Visual feedback - flash red (using a safer method)
-      this.flashDamageVisual();
+      return;
     }
+    
+    // Enter staggered state
+    this.state = EnemyState.STAGGERED;
+    this.staggerTime = 0.5;
+    
+    // Play hit sound
+    gameAudio.playSound('enemyHit', { volume: 0.8 });
   }
   
   private die(): void {
@@ -653,16 +617,16 @@ export class Enemy extends Group {
     this.staggerTime = duration;
   }
 
-  // Add respawn method
-  public respawn(): void {
+  // Modify respawn to reset damage marks
+  respawn(): void {
     console.log("Respawning enemy");
     this.isRespawning = false;
     this.health = this.maxHealth;
     
-    // Reset position
+    // Reset position to ground level
     this.position.set(
       Math.random() * 10 - 5,
-      0,
+      0, // Fixed Y position at ground level
       Math.random() * 10 - 5
     );
     
@@ -684,43 +648,49 @@ export class Enemy extends Group {
     const healthBar = document.getElementById('enemy-health-bar');
     if (healthBar) {
       healthBar.style.width = '100%';
+      healthBar.style.backgroundColor = '#00ff00'; // Reset to green
     }
+    
+    // Clear damage marks
+    for (const mark of this.damageMarks) {
+      this.remove(mark);
+    }
+    this.damageMarks = [];
     
     // Dispatch event
     this.dispatchEvent({ type: 'respawned' as any });
   }
 
-  // Add method to update health visual representation
-  private updateHealthVisual(): void {
-    // Find health bar mesh if it exists
-    const healthBar = this.getObjectByName('health-bar');
-    
-    if (healthBar && healthBar instanceof Mesh) {
-      // Update scale to reflect health percentage
-      const healthPercent = Math.max(0, this.health / this.maxHealth);
-      healthBar.scale.x = healthPercent;
-      
-      // Update color based on health level
-      const material = healthBar.material as MeshBasicMaterial;
-      
-      if (healthPercent > 0.6) {
-        material.color.set(0x00ff00); // Green for high health
-      } else if (healthPercent > 0.3) {
-        material.color.set(0xffff00); // Yellow for medium health
-      } else {
-        material.color.set(0xff0000); // Red for low health
-      }
-    }
-  }
-
-  // Add method to explicitly set attack cooldown
-  public setAttackCooldown(time: number): void {
-    this.attackCooldown = time;
-  }
-
-  // Add method to add damage visual
+  // Add a method to create visible damage marks
   private addDamageVisual(): void {
-    // Implementation of adding damage visual
+    if (this.damageMarks.length >= 5) return; // Limit number of damage marks
+    
+    // Create a glowing damage mark
+    const damageGeo = new SphereGeometry(0.05, 8, 8);
+    const damageMat = new MeshBasicMaterial({
+      color: 0xff6600,
+      transparent: true, 
+      opacity: 0.8
+    });
+    
+    const damageMark = new Mesh(damageGeo, damageMat);
+    
+    // Random position on body
+    const bodyParts = [this.head, this.body, this.leftArm, this.rightArm];
+    const targetPart = bodyParts[Math.floor(Math.random() * bodyParts.length)];
+    
+    // Random offset on the chosen body part
+    const randomX = (Math.random() - 0.5) * 0.3;
+    const randomY = (Math.random() - 0.5) * 0.3;
+    const randomZ = (Math.random() - 0.5) * 0.3;
+    
+    damageMark.position.copy(targetPart.position);
+    damageMark.position.x += randomX;
+    damageMark.position.y += randomY;
+    damageMark.position.z += randomZ;
+    
+    this.add(damageMark);
+    this.damageMarks.push(damageMark);
   }
 
   getLastRespawnTime(): number {
@@ -794,5 +764,10 @@ export class Enemy extends Group {
     
     // Start animation
     animate();
+  }
+
+  // Add attack cooldown setter
+  public setAttackCooldown(cooldown: number): void {
+    this.attackCooldown = cooldown;
   }
 }

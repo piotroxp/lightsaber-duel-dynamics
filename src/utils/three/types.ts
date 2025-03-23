@@ -1,10 +1,13 @@
-import { Object3D } from 'three';
+import { Object3D, Vector3 } from 'three';
 
 // Extend Three.js event types with our custom events
 declare global {
   namespace THREE {
     interface Object3DEventMap {
-      [key: string]: any; // Allow any string key with any value
+      // Add specific event types instead of using index signature
+      enemyDied: { position: Vector3 };
+      respawned: void;
+      damaged: { amount: number };
     }
   }
 } 

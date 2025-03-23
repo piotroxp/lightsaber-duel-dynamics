@@ -163,6 +163,10 @@ export class ParticleEmitter extends Group {
       }
     });
   }
+
+  setActive(active: boolean): void {
+    this.isActive = active;
+  }
 }
 
 // Create a simple hit effect
