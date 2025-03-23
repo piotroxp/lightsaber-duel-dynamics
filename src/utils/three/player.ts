@@ -77,7 +77,7 @@ export class Player extends Group {
   
   // Physics parameters
   private jumpVelocity: number = 0;
-  private gravity: number = 20; // Gravity strength
+  private gravity: number = 30; // Increased gravity strength
   private jumpStrength: number = 8; // Initial jump velocity
   private isGrounded: boolean = true;
   private normalHeight: number = 1.7; // Normal camera height
@@ -87,7 +87,7 @@ export class Player extends Group {
   // Add momentum to lightsaber movement
   private readonly saberPositions: Vector3[] = []; // Store recent positions
   private readonly positionHistorySize = 10; // Number of positions to keep
-  private readonly saberInertia = 0.85; // Higher = more inertia (0-1)
+  private readonly saberInertia = 0.75; // Reduced inertia for faster response
   
   constructor(scene: Scene, camera: Camera) {
     super();
@@ -140,6 +140,17 @@ export class Player extends Group {
       // Update lightsaber position based on mouse
       this.updateLightsaberWithMomentum();
     });
+
+    // Add event listener to prevent Ctrl+W from closing the page
+    document.addEventListener('keydown', (event) => {
+      // Prevent Ctrl+W from closing the page
+      if (event.ctrlKey && (event.key === 'w' || event.key === 'W')) {
+        event.preventDefault();
+        event.stopPropagation();
+        console.log('Prevented browser close with Ctrl+W');
+        return false;
+      }
+    }, false);
   }
   
   private setupControls(): void {
@@ -310,6 +321,8 @@ export class Player extends Group {
     
     // Handle jumping and gravity
     if (!this.isGrounded || this.isJumping) {
+      console.log(`Jumping state: isGrounded=${this.isGrounded}, isJumping=${this.isJumping}, vel=${this.jumpVelocity.toFixed(2)}`);
+      
       // Apply gravity to jump velocity
       this.jumpVelocity -= this.gravity * deltaTime;
       
@@ -330,6 +343,12 @@ export class Player extends Group {
       if (this.isJumping) {
         console.log(`Jumping: y=${this.position.y.toFixed(2)}, vel=${this.jumpVelocity.toFixed(2)}`);
       }
+    }
+    
+    // Force position to be at least 0 (never below ground)
+    if (this.position.y < 0) {
+      this.position.y = 0;
+      this.isGrounded = true;
     }
     
     // Handle crouching
@@ -521,7 +540,7 @@ export class Player extends Group {
     this.lightsaber.block();
     
     // Play block sound
-    gameAudio.playSound('lightsaberMove', { volume: 0.4 });
+    gameAudio.playSound('lightsaberHum', { volume: 0.5 });
     
     // Keep track of block time
     this.lastBlockTime = performance.now() / 1000;
@@ -795,6 +814,17 @@ export class Player extends Group {
     this.state = PlayerState.BLOCKING;
     this.lastBlockTime = performance.now() / 1000;
     
+    // Position lightsaber in blocking stance
+    if (this.lightsaber) {
+      // Ensure lightsaber is active
+      if (!this.lightsaber.isActive()) {
+        this.lightsaber.activate();
+      }
+      
+      // Play block sound
+      gameAudio.playSound('lightsaberHum', { volume: 0.5 });
+    }
+    
     console.log("Player block started");
   }
   
@@ -888,6 +918,14 @@ export class Player extends Group {
     targetPoint.copy(this.raycaster.ray.direction)
       .multiplyScalar(targetDistance)
       .add(this.camera.position);
+      
+    // If blocking, position saber in defensive stance
+    if (this.state === PlayerState.BLOCKING) {
+      // Override target point to be in blocking position (in front of player)
+      targetPoint.copy(this.camera.position)
+        .add(this.camera.getWorldDirection(new Vector3()).multiplyScalar(1.5))
+        .add(new Vector3(0, 0.3, 0)); // Slightly raised
+    }
     
     // Add to position history
     this.saberPositions.push(targetPoint.clone());
@@ -911,6 +949,15 @@ export class Player extends Group {
     // Normalize by total weight
     weightedPosition.divideScalar(totalWeight);
     
+    // When not actively moving, gradually move saber toward center view
+    if (this.state !== PlayerState.ATTACKING && this.state !== PlayerState.BLOCKING) {
+      const centerBias = 0.15; // Strength of center bias
+      const centerPoint = this.camera.position.clone()
+        .add(this.camera.getWorldDirection(new Vector3()).multiplyScalar(2));
+      
+      weightedPosition.lerp(centerPoint, centerBias);
+    }
+    
     // Calculate direction and apply to lightsaber
     const direction = new Vector3().subVectors(
       weightedPosition, 
@@ -926,7 +973,13 @@ export class Player extends Group {
     const targetRotation = new Quaternion().setFromRotationMatrix(lookAtMatrix);
     
     // Apply inertia using slerp with custom factor
-    this.lightsaber.quaternion.slerp(targetRotation, 1 - this.saberInertia);
+    const lerpFactor = this.state === PlayerState.BLOCKING ? 0.5 : (1 - this.saberInertia);
+    this.lightsaber.quaternion.slerp(targetRotation, lerpFactor);
+    
+    // Print debug info for space key jumping
+    if (this.isJumping) {
+      console.log(`Jumping active: height=${this.position.y.toFixed(2)}, velocity=${this.jumpVelocity.toFixed(2)}`);
+    }
   }
   
   getLastRespawnTime(): number {
