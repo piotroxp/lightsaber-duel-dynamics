@@ -274,7 +274,7 @@ export class Player extends Group {
     this.lastBlockTime = performance.now() / 1000;
   }
   
-  takeDamage(amount: number, attackerPosition: Vector3): void {
+  public takeDamage(amount: number, attackerPosition: Vector3): void {
     console.log(`[PLAYER] Taking ${amount} damage from position:`, attackerPosition);
     console.log(`[PLAYER] Current health before damage: ${this.health}`);
     
@@ -287,24 +287,26 @@ export class Player extends Group {
     // Check if we're blocking
     if (this.state === PlayerState.BLOCKING) {
       console.log("[PLAYER] Blocking! Damage reduced");
-      amount = Math.max(1, Math.floor(amount * 0.2)); // 80% damage reduction
+      amount = Math.floor(amount * 0.2); // 80% damage reduction when blocking
     }
     
     // Apply damage
     this.health = Math.max(0, this.health - amount);
     console.log(`[PLAYER] Health after damage: ${this.health}`);
     
-    // CRITICAL: Dispatch event for health change
-    this.dispatchEvent({
-      type: 'healthChanged',
-      health: this.health,
-      maxHealth: 100
+    // Create hit effect
+    createHitEffect(this.scene, this.position.clone().add(new Vector3(0, 1.2, 0)), '#ff0000');
+    
+    // Play hit sound
+    gameAudio.playSound('playerHit', { volume: 0.7 });
+    
+    // Dispatch health changed event
+    this.dispatchEvent({ 
+      type: 'healthChanged', 
+      health: this.health, 
+      maxHealth: this.maxHealth 
     });
     
-    // Create visual effect
-    this.createDamageEffect();
-    
-    // Check if we died
     if (this.health <= 0) {
       console.log("[PLAYER] Player died!");
       this.state = PlayerState.DEAD;
@@ -317,17 +319,6 @@ export class Player extends Group {
           this.state = PlayerState.IDLE;
         }
       }, 200);
-    }
-  }
-  
-  private createDamageEffect(): void {
-    try {
-      createHitEffect(this.scene, this.position);
-      
-      // Play hit sound
-      gameAudio.playSound('player_hit', { volume: 0.5 });
-    } catch (error) {
-      console.warn("Failed to create damage effect:", error);
     }
   }
   

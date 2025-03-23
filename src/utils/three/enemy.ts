@@ -276,40 +276,44 @@ export class Enemy extends Group {
   
   takeDamage(amount: number, attackerPosition: Vector3): void {
     console.log(`[ENEMY] Taking ${amount} damage from position:`, attackerPosition);
-    console.log(`[ENEMY] Current health before damage: ${this.health}`);
+    console.log(`[ENEMY] Current health before damage:`, this.health);
     
-    if (this.state === EnemyState.DEAD) {
+    // Skip if already dead
+    if (!this.isAlive()) {
       console.log("[ENEMY] Already dead, ignoring damage");
       return;
     }
     
     // Apply damage
-    this.health -= amount;
-    console.log(`[ENEMY] Health after damage: ${this.health}`);
+    this.health = Math.max(0, this.health - amount);
+    console.log(`[ENEMY] Health after damage:`, this.health);
     
-    // Update visual representation of health
-    this.updateHealthVisual();
+    // Dispatch enemy health changed event
+    const healthChangeEvent = new CustomEvent('enemyHealthChanged', {
+      detail: {
+        health: this.health,
+        maxHealth: this.maxHealth
+      }
+    });
+    window.dispatchEvent(healthChangeEvent);
     
-    // Enter staggered state if hit
-    this.state = EnemyState.STAGGERED;
-    this.staggerTime = 0.5;
+    // Create hit effect at torso height
+    if (this.scene) {
+      const hitPosition = this.position.clone().add(new Vector3(0, 1.2, 0));
+      createHitEffect(this.scene, hitPosition, '#ff0000');
+    }
     
-    // Check if dead
+    // Play hit sound
+    gameAudio.playSound('enemyHit', { volume: 0.7 });
+    
+    // Apply stagger effect
+    this.applyStagger(0.5);
+    
+    // Check for death
     if (this.health <= 0) {
       console.log("[ENEMY] Enemy died!");
       this.die();
-      return;
     }
-    
-    // Visual feedback for hit
-    if (this.scene) {
-      const hitPosition = this.position.clone();
-      hitPosition.y = 1.2;
-      createHitEffect(this.scene, hitPosition, '#ff4444');
-    }
-    
-    // Audio feedback
-    gameAudio.playSound('enemyHit', { volume: 0.8 });
   }
   
   private die(): void {
@@ -688,5 +692,10 @@ export class Enemy extends Group {
   // Add method to explicitly set attack cooldown
   public setAttackCooldown(time: number): void {
     this.attackCooldown = time;
+  }
+
+  // Add method to add damage visual
+  private addDamageVisual(): void {
+    // Implementation of adding damage visual
   }
 }
