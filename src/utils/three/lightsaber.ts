@@ -216,47 +216,36 @@ export class Lightsaber extends Group {
     }
   }
   
-  private updateBladeVisuals(): void {
-    // Update blade material - reduce opacity for more translucency
-    const bladeMaterial = this.blade.material as MeshBasicMaterial;
-    bladeMaterial.opacity = this.activationProgress * 0.5; // More translucent
+  updateBladeVisuals(): void {
+    if (!this.blade) return;
     
-    // Update core material with higher opacity
-    const coreMaterial = this.bladeCore.material as MeshBasicMaterial;
-    coreMaterial.opacity = this.activationProgress * 1.2; // More visible
-    
-    // Update plasma core with even higher opacity
-    const plasmaMaterial = this.plasmaCore.material as MeshBasicMaterial;
-    plasmaMaterial.opacity = this.activationProgress * 1.5; // Very bright
-    
-    // Scale blade based on activation progress
-    this.blade.scale.y = this.activationProgress;
-    this.blade.position.y = this.hiltLength + (this.bladeLength * this.activationProgress) / 2;
-    
-    // Scale cores based on activation progress
-    this.bladeCore.scale.y = this.activationProgress;
-    this.bladeCore.position.y = this.hiltLength + (this.bladeLength * this.activationProgress) / 2;
-    
-    this.plasmaCore.scale.y = this.activationProgress;
-    this.plasmaCore.position.y = this.hiltLength + (this.bladeLength * this.activationProgress) / 2;
-    
-    // Update light intensity
-    this.bladeLight.visible = this.activationProgress > 0;
-    this.bladeLight.intensity = this.activationProgress * 2;
-    
-    // Update glow emitter position
-    if (this.glowEmitter) {
-      this.glowEmitter.position.y = this.hiltLength + (this.bladeLength * this.activationProgress) / 2;
-    }
-    
-    // Update blade flare
-    if (this.bladeFlare.material instanceof MeshBasicMaterial) {
-      this.bladeFlare.material.opacity = this.activationProgress * 0.8;
-      this.bladeFlare.position.y = this.hiltLength + (this.bladeLength * this.activationProgress);
+    if (this.active) {
+      // Enhanced active blade visuals
+      const bladeMaterial = this.blade.material as MeshBasicMaterial;
       
-      // Scale flare with activation
-      const flareScale = this.activationProgress * 1.2;
-      this.bladeFlare.scale.set(flareScale, flareScale, flareScale);
+      // Make the blade more vibrant with a higher intensity core
+      bladeMaterial.color.setRGB(0.6, 0.8, 1.0);
+      
+      // Add a subtle pulsing effect
+      const pulseAmount = Math.sin(Date.now() * 0.005) * 0.1 + 0.9;
+      this.blade.scale.set(1, 1, pulseAmount);
+      
+      // Make sure the blade is visible
+      this.blade.visible = true;
+      
+      // Update glow effect if it exists
+      if (this.glowEmitter) {
+        this.glowEmitter.visible = true;
+        // Make the glow pulse slightly out of sync with the blade
+        const glowPulse = Math.sin(Date.now() * 0.003) * 0.2 + 1.2;
+        this.glowEmitter.scale.set(glowPulse, glowPulse, glowPulse);
+      }
+    } else {
+      // Blade is off
+      this.blade.visible = false;
+      if (this.glowEmitter) {
+        this.glowEmitter.visible = false;
+      }
     }
   }
   
@@ -264,7 +253,7 @@ export class Lightsaber extends Group {
     if (this.active) return;
     
     this.active = true;
-    this.activationProgress = 0;
+    this.activationProgress = 1; // Set to full extension immediately
     
     // Make all blade components visible
     this.blade.visible = true;
@@ -272,6 +261,16 @@ export class Lightsaber extends Group {
     this.plasmaCore.visible = true;
     this.bladeLight.visible = true;
     this.bladeFlare.visible = true;
+    
+    // Set proper scale for all blade components
+    this.blade.scale.set(1, 1, 1);
+    this.bladeCore.scale.set(1, 1, 1);
+    this.plasmaCore.scale.set(1, 1, 1);
+    
+    // Set proper position for all blade components
+    this.blade.position.y = this.hiltLength + this.bladeLength / 2;
+    this.bladeCore.position.y = this.hiltLength + this.bladeLength / 2;
+    this.plasmaCore.position.y = this.hiltLength + this.bladeLength / 2;
     
     // Play activation sound
     gameAudio.playSound('lightsaberOn', { volume: 0.7 });
@@ -282,6 +281,7 @@ export class Lightsaber extends Group {
     (this.bladeCore.material as MeshBasicMaterial).opacity = 0.6;
     (this.plasmaCore.material as MeshBasicMaterial).opacity = 0.8;
     this.bladeLight.intensity = 1.0 * this.glowIntensity;
+    this.updateBladeVisuals();
   }
   
   deactivate(): void {
@@ -307,6 +307,14 @@ export class Lightsaber extends Group {
       // Shrink blade into hilt
       this.blade.scale.set(1, 1 - progress, 1);
       
+      // Also shrink core and plasma core
+      if (this.bladeCore) {
+        this.bladeCore.scale.set(1, 1 - progress, 1);
+      }
+      if (this.plasmaCore) {
+        this.plasmaCore.scale.set(1, 1 - progress, 1);
+      }
+      
       // Disable light when mostly retracted
       if (progress > 0.7 && this.bladeLight.visible) {
         this.bladeLight.visible = false;
@@ -316,6 +324,11 @@ export class Lightsaber extends Group {
         requestAnimationFrame(animate);
       } else {
         this.active = false;
+        // Hide all blade components when fully deactivated
+        this.blade.visible = false;
+        this.bladeCore.visible = false;
+        this.plasmaCore.visible = false;
+        this.bladeFlare.visible = false;
       }
     };
     
@@ -684,5 +697,40 @@ export class Lightsaber extends Group {
     
     // Play swing sound
     gameAudio.playSound('lightsaberSwing', { volume: 0.8 });
+  }
+
+  setColor(color: string): void {
+    this.bladeColor = color;
+    
+    // Update blade color
+    if (this.blade && this.blade.material instanceof MeshBasicMaterial) {
+      this.blade.material.color.set(color);
+    }
+    
+    // Update core color (slightly brighter)
+    if (this.bladeCore && this.bladeCore.material instanceof MeshBasicMaterial) {
+      // Create a brighter version of the color
+      const coreColor = new Color(color);
+      coreColor.multiplyScalar(1.2); // Make it brighter
+      this.bladeCore.material.color.copy(coreColor);
+    }
+    
+    // Update plasma core (even brighter)
+    if (this.plasmaCore && this.plasmaCore.material instanceof MeshBasicMaterial) {
+      const plasmaColor = new Color(color);
+      plasmaColor.multiplyScalar(1.5); // Make it even brighter
+      this.plasmaCore.material.color.copy(plasmaColor);
+    }
+    
+    // Update light color
+    if (this.bladeLight) {
+      this.bladeLight.color.set(color);
+    }
+    
+    // Update glow emitter if it exists
+    if (this.glowEmitter) {
+      // Update emitter color (implementation depends on your ParticleEmitter class)
+      this.glowEmitter.setColor(parseInt(color.replace('#', '0x')));
+    }
   }
 }

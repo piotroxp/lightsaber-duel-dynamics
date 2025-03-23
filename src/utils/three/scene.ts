@@ -586,6 +586,9 @@ export class GameScene {
     healthContainer.appendChild(enemyHealth);
     this.container.appendChild(healthContainer);
     
+    // Add lightsaber color picker
+    this.createLightsaberColorPicker();
+    
     // Immediately dispatch initial health events to set the bars
     window.dispatchEvent(new CustomEvent('playerHealthChanged', {
       detail: {
@@ -619,6 +622,79 @@ export class GameScene {
         bar.style.width = `${percent}%`;
       }
     });
+  }
+  
+  private createLightsaberColorPicker(): void {
+    // Create color picker container
+    const colorPickerContainer = document.createElement('div');
+    colorPickerContainer.style.position = 'absolute';
+    colorPickerContainer.style.bottom = '20px';
+    colorPickerContainer.style.left = '50%';
+    colorPickerContainer.style.transform = 'translateX(-50%)';
+    colorPickerContainer.style.display = 'flex';
+    colorPickerContainer.style.flexDirection = 'column';
+    colorPickerContainer.style.alignItems = 'center';
+    colorPickerContainer.style.gap = '10px';
+    colorPickerContainer.style.background = 'rgba(0, 0, 0, 0.5)';
+    colorPickerContainer.style.padding = '10px';
+    colorPickerContainer.style.borderRadius = '8px';
+    
+    // Add title
+    const title = document.createElement('div');
+    title.textContent = 'LIGHTSABER COLOR';
+    title.style.color = 'white';
+    title.style.fontWeight = 'bold';
+    title.style.textShadow = '0 0 3px #fff';
+    colorPickerContainer.appendChild(title);
+    
+    // Create color options
+    const colors = [
+      { name: 'Blue', value: '#3366ff' },
+      { name: 'Green', value: '#33ff66' },
+      { name: 'Red', value: '#ff3333' },
+      { name: 'Purple', value: '#9933ff' },
+      { name: 'Yellow', value: '#ffcc33' },
+      { name: 'White', value: '#ffffff' }
+    ];
+    
+    // Create color buttons container
+    const colorButtons = document.createElement('div');
+    colorButtons.style.display = 'flex';
+    colorButtons.style.gap = '8px';
+    
+    colors.forEach(color => {
+      const button = document.createElement('button');
+      button.style.width = '30px';
+      button.style.height = '30px';
+      button.style.background = color.value;
+      button.style.border = '2px solid white';
+      button.style.borderRadius = '50%';
+      button.style.cursor = 'pointer';
+      button.style.boxShadow = `0 0 10px ${color.value}`;
+      button.title = color.name;
+      
+      button.addEventListener('click', () => {
+        // Update lightsaber color
+        if (this.player && this.player.getLightsaber()) {
+          this.player.getLightsaber().setColor(color.value);
+        }
+        
+        // Update active button style
+        document.querySelectorAll('#lightsaber-color-picker button').forEach(btn => {
+          (btn as HTMLElement).style.transform = 'scale(1)';
+          (btn as HTMLElement).style.boxShadow = `0 0 10px ${(btn as HTMLElement).style.background}`;
+        });
+        
+        button.style.transform = 'scale(1.2)';
+        button.style.boxShadow = `0 0 15px ${color.value}`;
+      });
+      
+      colorButtons.appendChild(button);
+    });
+    
+    colorPickerContainer.appendChild(colorButtons);
+    colorPickerContainer.id = 'lightsaber-color-picker';
+    this.container.appendChild(colorPickerContainer);
   }
   
   private async loadAssets(): Promise<void> {

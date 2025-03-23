@@ -48,6 +48,7 @@ export class Player extends Group {
   private isMovingRight: boolean = false;
   private isAttackPressed: boolean = false;
   private isBlockPressed: boolean = false;
+  private isLightsaberActive: boolean = false;
   private state: PlayerState = PlayerState.IDLE;
   private attackCooldown: number = 0.5; // seconds
   private lastAttackTime: number = 0;
@@ -92,7 +93,7 @@ export class Player extends Group {
     this.lightsaber.rotation.x = Math.PI * (-0.13);
     
     // Add keyboard event listeners
-    this.setupEventListeners();
+    this.setupControls();
     
     // Activate lightsaber with delay for effect
     setTimeout(() => {
@@ -100,9 +101,31 @@ export class Player extends Group {
     }, 1000);
   }
   
-  private setupEventListeners(): void {
-    document.addEventListener('keydown', this.handleKeyDown.bind(this));
-    document.addEventListener('keyup', this.handleKeyUp.bind(this));
+  private setupControls(): void {
+    // Keyboard controls
+    document.addEventListener('keydown', (event) => {
+      switch (event.code) {
+        case 'KeyW': this.isMovingForward = true; break;
+        case 'KeyS': this.isMovingBackward = true; break;
+        case 'KeyA': this.isMovingLeft = true; break;
+        case 'KeyD': this.isMovingRight = true; break;
+        case 'Digit1': 
+          // Toggle lightsaber on/off
+          this.toggleLightsaber();
+          break;
+      }
+    });
+
+    document.addEventListener('keyup', (event) => {
+      switch (event.code) {
+        case 'KeyW': this.isMovingForward = false; break;
+        case 'KeyS': this.isMovingBackward = false; break;
+        case 'KeyA': this.isMovingLeft = false; break;
+        case 'KeyD': this.isMovingRight = false; break;
+      }
+    });
+    
+    // Mouse controls
     document.addEventListener('mousedown', this.handleMouseDown.bind(this));
     document.addEventListener('mouseup', this.handleMouseUp.bind(this));
   }
@@ -169,7 +192,28 @@ export class Player extends Group {
   }
   
   update(deltaTime: number): void {
+    // Skip if dead
     if (this.state === PlayerState.DEAD) return;
+    
+    // Update lightsaber position
+    this.updateLightsaberPosition();
+    
+    // Update lightsaber visuals
+    if (this.lightsaber) {
+      // Only allow attacks when lightsaber is active
+      if (!this.isLightsaberActive && this.isAttackPressed) {
+        this.isAttackPressed = false;
+      }
+      
+      // Make sure lightsaber state is consistent
+      if (this.isLightsaberActive !== this.lightsaber.isActive()) {
+        if (this.isLightsaberActive) {
+          this.lightsaber.activate();
+        } else {
+          this.lightsaber.deactivate();
+        }
+      }
+    }
     
     // Handle movement
     this.handleMovement(deltaTime);
@@ -206,9 +250,6 @@ export class Player extends Group {
         this.playerModel.lookAt(this.position.clone().add(direction));
       }
     }
-    
-    // Update lightsaber position
-    this.updateLightsaberPosition();
   }
   
   private handleMovement(deltaTime: number): void {
@@ -531,5 +572,19 @@ export class Player extends Group {
   
   public setDamageAppliedInCurrentAttack(value: boolean): void {
     this.damageAppliedInCurrentAttack = value;
+  }
+  
+  toggleLightsaber(): void {
+    this.isLightsaberActive = !this.isLightsaberActive;
+    
+    if (this.isLightsaberActive) {
+      this.lightsaber.activate();
+      // Play activation sound
+      gameAudio.playSound('lightsaberOn', { volume: 0.8 });
+    } else {
+      this.lightsaber.deactivate();
+      // Play deactivation sound
+      gameAudio.playSound('lightsaberOff', { volume: 0.8 });
+    }
   }
 }

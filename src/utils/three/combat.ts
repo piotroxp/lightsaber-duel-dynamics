@@ -434,13 +434,18 @@ export class CombatSystem {
         console.log("🎯 HIT DETECTED! Distance:", distance);
         
         // Apply damage more consistently
-        const damage = 10; // Reduced damage amount for better gameplay
+        const damage = 5; // Further reduced damage amount to prevent one-hit kills
         
         // CRITICAL FIX: Ensure enemy takes damage
         enemy.takeDamage(damage);
         
         // Mark that we've applied damage for this attack
         this.player.setDamageAppliedInCurrentAttack(true);
+        
+        // Add a cooldown to prevent rapid damage
+        setTimeout(() => {
+          this.player.setDamageAppliedInCurrentAttack(false);
+        }, 500);
         
         // Dispatch event for UI update
         const healthChangeEvent = new CustomEvent('enemyHealthChanged', {
@@ -450,6 +455,16 @@ export class CombatSystem {
           }
         });
         window.dispatchEvent(healthChangeEvent);
+        
+        // Create hit effect
+        createHitEffect(
+          this.scene,
+          enemyTorsoPosition,
+          '#ff3300'
+        );
+        
+        // Play hit sound
+        gameAudio.playSound('enemyHit', { volume: 0.7 });
         
         return; // Only hit one enemy at a time
       }
