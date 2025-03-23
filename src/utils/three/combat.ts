@@ -54,7 +54,7 @@ export class CombatSystem {
           console.log("Enemy health BEFORE damage:", enemy.getHealth());
           
           // CRITICAL: Reduce damage to require at least 5 hits
-          enemy.takeDamage(20, playerPos);
+          enemy.takeDamage(20);
           
           // Debug AFTER damage
           console.log("Enemy health AFTER damage:", enemy.getHealth());
@@ -94,7 +94,7 @@ export class CombatSystem {
           // CRITICAL: Ensure enemy damage is applied properly
           const damage = enemy.getAttackDamage();
           console.log(`Enemy dealing ${damage} damage to player`);
-          this.player.takeDamage(damage, enemy.getPosition());
+          this.player.takeDamage(damage);
           
           // Debug player health after damage
           console.log("Player health AFTER damage:", this.player.getHealth());
@@ -127,8 +127,33 @@ export class CombatSystem {
   }
   
   private checkEnemyAttacks(deltaTime: number): void {
-    // Update enemy attack logic
-    this.updateEnemyAttacks(deltaTime);
+    for (const enemy of this.enemies) {
+      if (!enemy.isAttacking() || !enemy.isAlive()) continue;
+      
+      const enemySaberPosition = enemy.getLightsaberPosition();
+      const playerPosition = this.player.position;
+      // Get more precise collision points
+      const playerTorsoPosition = playerPosition.clone().add(new Vector3(0, 1.0, 0));
+      const distance = enemySaberPosition.distanceTo(playerTorsoPosition);
+      
+      if (distance < 1.2) {
+        console.log("⚔️ ENEMY HIT PLAYER! Distance:", distance);
+        
+        // Apply damage
+        const damage = 5; // Reduced damage for better gameplay
+        this.player.takeDamage(damage);
+        
+        // Create clash effect
+        createSaberClashEffect(
+          this.scene,
+          enemySaberPosition,
+          '#ff0000'
+        );
+        
+        // Play clash sound
+        gameAudio.playSound('lightsaberClash', { volume: 0.8 });
+      }
+    }
   }
   
   private checkCombatInteractions(deltaTime: number): void {
@@ -156,7 +181,7 @@ export class CombatSystem {
         
         // Force damage application with direct hit
         const damage = 25;
-        enemy.takeDamage(damage, this.player.getPosition());
+        enemy.takeDamage(damage);
         console.log(`Applied ${damage} damage to enemy!`);
         
         // Create hit effect at enemy position
@@ -249,7 +274,7 @@ export class CombatSystem {
           
           // Deal damage to player directly
           const damage = enemy.getAttackDamage();
-          this.player.takeDamage(damage, enemyPos);
+          this.player.takeDamage(damage);
           
           // Visual feedback
           const attackPos = playerPos.clone();
@@ -304,7 +329,7 @@ export class CombatSystem {
   applyDamageToEnemy(enemy: Enemy, amount: number, sourcePosition: Vector3): void {
     // Direct damage application with console log for debugging
     console.log(`Applying ${amount} damage to enemy`);
-    enemy.takeDamage(amount, sourcePosition);
+    enemy.takeDamage(amount);
       
     // Visual and audio effects
     const hitPosition = enemy.position.clone();
@@ -345,7 +370,7 @@ export class CombatSystem {
       const distToPlayer = this.player.getPosition().distanceTo(enemySaberPos);
       
       if (distToPlayer < 1.8 && enemy.getAttackTimer() > 0.2) {
-        this.player.takeDamage(enemy.getAttackDamage(), enemy.getPosition());
+        this.player.takeDamage(enemy.getAttackDamage());
         break;
       }
     }
@@ -389,6 +414,11 @@ export class CombatSystem {
   checkPlayerAttack(deltaTime: number): void {
     if (!this.player.isAttacking()) return;
     
+    // Check if we've already applied damage for this attack
+    if (this.player.hasAppliedDamageInCurrentAttack()) {
+      return;
+    }
+    
     const playerSaberPosition = this.player.getLightsaberPosition();
     const attackDirection = this.player.getDirection();
     
@@ -396,16 +426,21 @@ export class CombatSystem {
       if (!enemy.isAlive()) continue;
       
       const enemyPosition = enemy.position;
-      const distance = playerSaberPosition.distanceTo(enemyPosition);
+      // Get more precise collision points
+      const enemyTorsoPosition = enemyPosition.clone().add(new Vector3(0, 1.0, 0));
+      const distance = playerSaberPosition.distanceTo(enemyTorsoPosition);
       
-      if (distance < 2.5) {
+      if (distance < 1.5) {
         console.log("🎯 HIT DETECTED! Distance:", distance);
         
         // Apply damage more consistently
-        const damage = 20; // Consistent damage amount
+        const damage = 10; // Reduced damage amount for better gameplay
         
         // CRITICAL FIX: Ensure enemy takes damage
-        enemy.takeDamage(damage, this.player.getPosition());
+        enemy.takeDamage(damage);
+        
+        // Mark that we've applied damage for this attack
+        this.player.setDamageAppliedInCurrentAttack(true);
         
         // Dispatch event for UI update
         const healthChangeEvent = new CustomEvent('enemyHealthChanged', {

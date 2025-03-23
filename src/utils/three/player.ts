@@ -57,6 +57,7 @@ export class Player extends Group {
   private originalCameraPosition: Vector3 = new Vector3();
   private playerModel: Group | null = null;
   private lightsaberOffset: Vector3 = new Vector3(0.09, -0.49, -0.75);
+  private damageAppliedInCurrentAttack: boolean = false;
   
   constructor(scene: Scene, camera: Camera) {
     super();
@@ -267,6 +268,7 @@ export class Player extends Group {
     
     this.lastAttackTime = currentTime;
     this.state = PlayerState.ATTACKING;
+    this.damageAppliedInCurrentAttack = false;
     
     // Determine movement direction for swing
     let movementDirection: 'left' | 'right' | 'forward' | 'none' = 'none';
@@ -306,8 +308,8 @@ export class Player extends Group {
     this.lastBlockTime = performance.now() / 1000;
   }
   
-  public takeDamage(amount: number, attackerPosition: Vector3): void {
-    console.log(`[PLAYER] Taking ${amount} damage from position:`, attackerPosition);
+  public takeDamage(amount: number, attackerPosition?: Vector3): void {
+    console.log(`[PLAYER] Taking ${amount} damage from position:`, attackerPosition || 'unknown');
     console.log(`[PLAYER] Current health before damage: ${this.health}`);
     
     // Skip if already dead
@@ -521,5 +523,13 @@ export class Player extends Group {
       // In first person, position relative to camera
       this.lightsaber.position.copy(this.lightsaberOffset);
     }
+  }
+  
+  public hasAppliedDamageInCurrentAttack(): boolean {
+    return this.damageAppliedInCurrentAttack;
+  }
+  
+  public setDamageAppliedInCurrentAttack(value: boolean): void {
+    this.damageAppliedInCurrentAttack = value;
   }
 }
