@@ -22,7 +22,7 @@ import { createHitEffect } from './effects';
 declare global {
   namespace THREE {
     interface Object3DEventMap {
-      healthChanged: { detail: { health: number, maxHealth: number } };
+      healthChanged: any;
       died: {};
     }
   }
@@ -841,7 +841,7 @@ export class Player extends Group {
     
     // Dispatch event
     this.dispatchEvent({ 
-      type: 'healthChanged', 
+      type: 'healthChanged' as any, 
       detail: { 
         health: this.health, 
         maxHealth: this.maxHealth 

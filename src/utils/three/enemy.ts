@@ -7,7 +7,7 @@ import gameAudio from './audio';
 declare global {
   namespace THREE {
     interface Object3DEventMap {
-      respawned: {};
+      [key: string]: any; // Allow any string key with any value
     }
   }
 }
@@ -41,6 +41,7 @@ export class Enemy extends Group {
   // Stats
   private health: number = 100;
   private maxHealth: number = 100;
+  private isDead: boolean = false;
   private speed: number;
   private attackRange: number;
   private attackDamage: number;
@@ -309,7 +310,7 @@ export class Enemy extends Group {
     
     // Dispatch damage event
     this.dispatchEvent({ 
-      type: 'damaged', 
+      type: 'damaged' as any, 
       detail: { 
         health: this.health,
         maxHealth: this.maxHealth,
@@ -686,7 +687,7 @@ export class Enemy extends Group {
     }
     
     // Dispatch event
-    this.dispatchEvent({ type: 'respawned' });
+    this.dispatchEvent({ type: 'respawned' as any });
   }
 
   // Add method to update health visual representation
