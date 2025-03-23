@@ -534,46 +534,89 @@ export class GameScene {
     console.log("Environment created");
 
     // Create UI elements including health display
-    this.createUIElements();
+    this.createModernHealthDisplay();
     
     this.addDebugElements(true);
   }
   
-  private createUIElements(): void {
-    // Create player health bar
-    const healthBarContainer = document.createElement('div');
-    healthBarContainer.id = 'player-health-container';
-    healthBarContainer.style.position = 'absolute';
-    healthBarContainer.style.bottom = '20px';
-    healthBarContainer.style.left = '20px';
-    healthBarContainer.style.width = '200px';
-    healthBarContainer.style.height = '20px';
-    healthBarContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-    healthBarContainer.style.border = '2px solid #ffffff';
-    healthBarContainer.style.borderRadius = '4px';
+  private createModernHealthDisplay(): void {
+    // Remove any existing health displays
+    const existingHealthElements = document.querySelectorAll('[id$="-health-container"], [id$="-health-modern"]');
+    existingHealthElements.forEach(element => element.remove());
     
-    const healthBar = document.createElement('div');
-    healthBar.id = 'player-health';
-    healthBar.style.width = '100%';
-    healthBar.style.height = '100%';
-    healthBar.style.backgroundColor = '#00ff00';
-    healthBar.style.transition = 'width 0.3s ease-out';
+    // Hide the React-based health display in Game.tsx
+    const style = document.createElement('style');
+    style.textContent = `
+      .player-health, .enemy-health, .vs-text {
+        display: none !important;
+      }
+    `;
+    document.head.appendChild(style);
     
-    healthBarContainer.appendChild(healthBar);
-    this.container.appendChild(healthBarContainer);
+    // Create health display container
+    const healthContainer = document.createElement('div');
+    healthContainer.style.position = 'absolute';
+    healthContainer.style.top = '20px';
+    healthContainer.style.left = '50%';
+    healthContainer.style.transform = 'translateX(-50%)';
+    healthContainer.style.display = 'flex';
+    healthContainer.style.gap = '20px';
     
-    // Set up event listener to update health bar
-    this.player.addEventListener('healthChanged', (event: any) => {
-      const healthPercent = event.health / event.maxHealth;
-      healthBar.style.width = `${healthPercent * 100}%`;
-      
-      // Change color based on health
-      if (healthPercent > 0.6) {
-        healthBar.style.backgroundColor = '#00ff00'; // Green
-      } else if (healthPercent > 0.3) {
-        healthBar.style.backgroundColor = '#ffff00'; // Yellow
-      } else {
-        healthBar.style.backgroundColor = '#ff0000'; // Red
+    // Player health
+    const playerHealth = document.createElement('div');
+    playerHealth.id = 'player-health-modern';
+    playerHealth.innerHTML = `
+      <div style="color: white; margin-bottom: 5px; text-align: center; font-weight: bold; text-shadow: 0 0 3px #3366ff">PLAYER</div>
+      <div style="width: 200px; height: 20px; background: #222">
+        <div id="player-health-bar" style="width: 100%; height: 100%; background: #3366ff; transition: width 0.3s; border-radius:15px;"></div>
+      </div>
+    `;
+    
+    // Enemy health
+    const enemyHealth = document.createElement('div');
+    enemyHealth.id = 'enemy-health-modern';
+    enemyHealth.innerHTML = `
+      <div style="color: white; margin-bottom: 5px; text-align: center; font-weight: bold; text-shadow: 0 0 3px #ff3333">ENEMY</div>
+      <div style="width: 200px; height: 20px; background: #222">
+        <div id="enemy-health-bar" style="width: 100%; height: 100%; background: #ff0000; transition: width 0.3s; border-radius:15px;"></div>
+      </div>
+    `;
+    
+    healthContainer.appendChild(playerHealth);
+    healthContainer.appendChild(enemyHealth);
+    this.container.appendChild(healthContainer);
+    
+    // Immediately dispatch initial health events to set the bars
+    window.dispatchEvent(new CustomEvent('playerHealthChanged', {
+      detail: {
+        health: this.player.getHealth(),
+        maxHealth: this.player.getMaxHealth()
+      }
+    }));
+    
+    if (this.enemies.length > 0) {
+      window.dispatchEvent(new CustomEvent('enemyHealthChanged', {
+        detail: {
+          health: this.enemies[0].getHealth(),
+          maxHealth: this.enemies[0].getMaxHealth()
+        }
+      }));
+    }
+    
+    // Event listeners for health updates
+    window.addEventListener('playerHealthChanged', (e: CustomEvent) => {
+      const bar = document.getElementById('player-health-bar');
+      if (bar) {
+        const percent = (e.detail.health / e.detail.maxHealth) * 100;
+        bar.style.width = `${percent}%`;
+      }
+    });
+
+    window.addEventListener('enemyHealthChanged', (e: CustomEvent) => {
+      const bar = document.getElementById('enemy-health-bar');
+      if (bar) {
+        const percent = (e.detail.health / e.detail.maxHealth) * 100;
+        bar.style.width = `${percent}%`;
       }
     });
   }

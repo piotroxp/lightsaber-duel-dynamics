@@ -1,4 +1,4 @@
-import { Group, Scene, Vector3, Mesh, BoxGeometry, MeshStandardMaterial, SphereGeometry, CylinderGeometry, Color, Quaternion, Euler, MathUtils, Object3D } from 'three';
+import { Group, Scene, Vector3, Mesh, BoxGeometry, MeshStandardMaterial, MeshBasicMaterial, SphereGeometry, CylinderGeometry, Color, Quaternion, Euler, MathUtils, Object3D } from 'three';
 import { Lightsaber } from './lightsaber';
 import { createSaberClashEffect, createHitEffect } from './effects';
 import gameAudio from './audio';
@@ -259,7 +259,7 @@ export class Enemy extends Group {
         this.lightsaber.swingAt(0, attackDirection);
       } catch (error) {
         console.error("Error during swing:", error);
-        this.lightsaber.swing(0);
+        this.lightsaber.swing("none");
       }
       
       // Play sound effect
@@ -274,36 +274,18 @@ export class Enemy extends Group {
     }, 800);
   }
   
-  takeDamage(amount: number, attackerPosition: Vector3): void {
-    console.log(`[ENEMY] Taking ${amount} damage from position:`, attackerPosition);
-    console.log(`[ENEMY] Current health before damage:`, this.health);
-    
-    // Skip if already dead
-    if (!this.isAlive()) {
-      console.log("[ENEMY] Already dead, ignoring damage");
-      return;
-    }
-    
-    // Apply damage
+  takeDamage(amount: number): void {
     this.health = Math.max(0, this.health - amount);
-    console.log(`[ENEMY] Health after damage:`, this.health);
     
-    // Dispatch enemy health changed event
-    const healthChangeEvent = new CustomEvent('enemyHealthChanged', {
+    // Dispatch health update event
+    window.dispatchEvent(new CustomEvent('enemyHealthChanged', {
       detail: {
         health: this.health,
         maxHealth: this.maxHealth
       }
-    });
-    window.dispatchEvent(healthChangeEvent);
+    }));
     
-    // Create hit effect at torso height
-    if (this.scene) {
-      const hitPosition = this.position.clone().add(new Vector3(0, 1.2, 0));
-      createHitEffect(this.scene, hitPosition, '#ff0000');
-    }
-    
-    // Play hit sound
+    createHitEffect(this.scene, this.position.clone().add(new Vector3(0, 1.2, 0)), '#ff0000');
     gameAudio.playSound('enemyHit', { volume: 0.7 });
     
     // Apply stagger effect
@@ -622,7 +604,7 @@ export class Enemy extends Group {
 
   // Add missing getLightsaberPosition method to Enemy class
   getLightsaberPosition(): Vector3 {
-    const position = this.lightsaber ? this.lightsaber.getBladeTipPosition() : this.position.clone();
+    const position = this.lightsaber ? this.lightsaber.getBladeTopPosition() : this.position.clone();
     console.log("[ENEMY] Lightsaber position:", position);
     return position;
   }
@@ -645,12 +627,9 @@ export class Enemy extends Group {
     this.isRespawning = false;
     this.health = this.maxHealth;
     
-    // Reset position (randomly offset from origin)
-    this.position.set(
-      (Math.random() - 0.5) * 10,
-      1.8,
-      (Math.random() - 0.5) * 10
-    );
+    // Reset to original position without Y shift
+    this.position.set(0, 0, -5); // Use exact starting position
+    this.rotation.set(0, 0, 0); // Reset rotation
     
     // Reset state
     this.state = EnemyState.IDLE;
@@ -662,6 +641,14 @@ export class Enemy extends Group {
     if (this.lightsaber) {
       this.lightsaber.activate();
     }
+    
+    // Ensure health bar is updated
+    window.dispatchEvent(new CustomEvent('enemyHealthChanged', {
+      detail: {
+        health: this.health,
+        maxHealth: this.maxHealth
+      }
+    }));
     
     console.log("Enemy respawned at", this.position);
   }

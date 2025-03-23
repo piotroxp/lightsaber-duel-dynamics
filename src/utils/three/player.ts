@@ -21,7 +21,7 @@ declare global {
   namespace THREE {
     interface Object3DEventMap {
       healthChanged: { health: number, maxHealth: number };
-      died: {};l
+      died: {};
     }
   }
 }
@@ -52,7 +52,7 @@ export class Player extends Group {
   private attackCooldown: number = 0.5; // seconds
   private lastAttackTime: number = 0;
   private lastBlockTime: number = 0;
-  private debugMode: boolean = false;
+  private debugMode: boolean = true;  // Disable debug visuals
   private isThirdPerson: boolean = false;
   private originalCameraPosition: Vector3 = new Vector3();
   private playerModel: Group | null = null;
@@ -333,11 +333,12 @@ export class Player extends Group {
     gameAudio.playSound('playerHit', { volume: 0.7 });
     
     // Dispatch health changed event
-    this.dispatchEvent({ 
-      type: 'healthChanged', 
-      health: this.health, 
-      maxHealth: this.maxHealth 
-    } as any);
+    window.dispatchEvent(new CustomEvent('playerHealthChanged', {
+      detail: {
+        health: this.health,
+        maxHealth: this.maxHealth
+      }
+    }));
     
     if (this.health <= 0) {
       console.log("[PLAYER] Player died!");
@@ -428,6 +429,11 @@ export class Player extends Group {
     console.log("toggleThirdPersonView called, current mode:", this.isThirdPerson);
     this.isThirdPerson = !this.isThirdPerson;
     
+    // Toggle player model visibility
+    if (this.playerModel) {
+      this.playerModel.visible = this.isThirdPerson;
+    }
+
     if (this.isThirdPerson) {
       // Store original position
       this.originalCameraPosition.copy(this.camera.position);
@@ -448,7 +454,7 @@ export class Player extends Group {
         const lightsaberWorldPos = new Vector3();
         this.lightsaber.getWorldPosition(lightsaberWorldPos);
         this.camera.remove(this.lightsaber);
-        this.add(this.lightsaber);
+        this.playerModel?.add(this.lightsaber); // Add to player model
         this.lightsaber.position.set(0.5, 1.2, 0.1);
       }
     } else {
@@ -457,7 +463,7 @@ export class Player extends Group {
       
       // Move lightsaber back to camera
       if (this.lightsaber) {
-        this.remove(this.lightsaber);
+        this.playerModel?.remove(this.lightsaber);
         this.camera.add(this.lightsaber);
         this.lightsaber.position.set(0.4, -0.1, -0.3);
       }
@@ -469,6 +475,7 @@ export class Player extends Group {
   private createPlayerModel(): void {
     // Create a simple player model (lightsaber wielder)
     this.playerModel = new Group();
+    this.playerModel.visible = this.isThirdPerson; // Start with correct visibility
     
     // Create head
     const headGeometry = new SphereGeometry(0.25, 16, 16);
