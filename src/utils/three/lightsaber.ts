@@ -1,6 +1,7 @@
 import { Group, Vector3, Mesh, CylinderGeometry, MeshStandardMaterial, MeshBasicMaterial, Color, AdditiveBlending, SpotLight, Object3D, PointLight, SphereGeometry, DoubleSide, Scene } from 'three';
-import { ParticleEmitter, createLightsaberGlow } from './effects';
+import { ParticleEmitter, createLightsaberGlow, createHitEffect } from './effects';
 import gameAudio from './audio';
+import { isDamageable, isDestructible } from './types';
 
 export interface LightsaberOptions {
   color?: string;
@@ -38,16 +39,44 @@ export class Lightsaber extends Group {
   private acceleration: Vector3 = new Vector3();
   private rotationalInertia: Vector3 = new Vector3();
   private swingPhase: number = 0;
-  private swingDirection: Vector3 = new Vector3(1, 0, 0);
+  private swingDirectionVector: Vector3 = new Vector3(1, 0, 0);
   private swingDamping: number = 0.92;
   private bladeSegments: (Mesh | Group)[] = [];
+  
+  // Swing mechanics
+  private swingState: 'idle' | 'windup' | 'strike' | 'recovery' = 'idle';
+  private swingType: 'light' | 'heavy' | 'none' = 'none';
+  private swingDirection: 'horizontal' | 'vertical' | 'diagonal' = 'horizontal';
+  private swingProgress: number = 0;
+  private swingDuration: number = 0;
+  private swingStartTime: number = 0;
+  private comboCount: number = 0;
+  private lastSwingTime: number = 0;
+  private comboResetTime: number = 0.5; // Time in seconds to reset combo
+  private swingCooldown: number = 0;
+  
+  // Damage properties
+  private lightAttackDamage: number = 20;
+  private heavyAttackDamage: number = 50;
+  private lightAttackDuration: number = 0.4;
+  private heavyAttackDuration: number = 0.7;
+  private lightAttackCooldown: number = 0.1;
+  private heavyAttackCooldown: number = 0.2;
+  
+  // Block properties
+  private blockDamageReduction: number = 0.8; // 80% damage reduction
+  
+  // Hitbox
+  private hitboxActive: boolean = false;
+  private hitboxRadius: number = 0.05;
+  private hitTargets: Set<Object3D> = new Set();
 
   constructor(options: LightsaberOptions = {}) {
     super();
     
     this.bladeColor = options.color || '#3366ff';
     this.bladeLength = options.bladeLength || 1.2;
-    this.hiltLength = options.hiltLength || 0.25; // Slightly longer for more detail
+    this.hiltLength = options.hiltLength || 0.3; // Updated to match spec
     this.glowIntensity = options.glowIntensity || 1.0;
     this.scene = options.scene || null;
     
@@ -57,6 +86,9 @@ export class Lightsaber extends Group {
     
     // Store initial position for physics
     this.prevPosition.copy(this.position);
+    
+    // Center the lightsaber in the scene
+    this.position.set(0, 0, 0);
     
     // Create hilt group to contain all hilt components
     const hiltGroup = new Group();
@@ -178,6 +210,19 @@ export class Lightsaber extends Group {
   update(deltaTime: number): void {
     if (!this.active) return;
     
+    // Update cooldowns
+    if (this.swingCooldown > 0) {
+      this.swingCooldown -= deltaTime;
+    }
+    
+    // Check for combo reset
+    if (this.comboCount > 0 && this.swingState === 'idle') {
+      const currentTime = performance.now() / 1000;
+      if (currentTime - this.lastSwingTime > this.comboResetTime) {
+        this.comboCount = 0;
+      }
+    }
+    
     // Update pulse time
     this.pulseTime += deltaTime * 5; // Adjust speed of pulsation
     
@@ -210,9 +255,12 @@ export class Lightsaber extends Group {
     
     // Increase brightness dramatically during swing
     if (this.bladeLight) {
-      if (this.isSwinging) {
+      if (this.swingState === 'strike') {
         this.bladeLight.intensity = 1.8 * this.glowIntensity;
         this.bladeLight.distance = 2.5;
+      } else if (this.swingState === 'windup' || this.swingState === 'recovery') {
+        this.bladeLight.intensity = 1.4 * this.glowIntensity;
+        this.bladeLight.distance = 2.2;
       }
     }
     
@@ -224,6 +272,11 @@ export class Lightsaber extends Group {
       this.glowEmitter.position.copy(this.getBladeTopPosition());
       this.glowEmitter.setActive(this.active && this.activationProgress > 0.5);
       this.glowEmitter.update(deltaTime);
+    }
+    
+    // Check for hits if hitbox is active
+    if (this.hitboxActive && this.parent) {
+      this.checkHits();
     }
   }
   
@@ -919,12 +972,12 @@ export class Lightsaber extends Group {
     this.blade.position.y = this.hiltLength;
     this.add(this.blade);
     
-    // Create the actual mesh inside the group
-    const bladeGeometry = new CylinderGeometry(0.025, 0.02, this.bladeLength, 12);
+    // Create outer layer (translucent colored glow)
+    const bladeGeometry = new CylinderGeometry(0.05, 0.045, this.bladeLength, 16);
     const bladeMaterial = new MeshBasicMaterial({
       color: this.bladeColor,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.4,
       side: DoubleSide,
       blending: AdditiveBlending
     });
@@ -932,19 +985,20 @@ export class Lightsaber extends Group {
     this.bladeMesh.position.y = this.bladeLength / 2;
     this.blade.add(this.bladeMesh);
     
-    // Create core material (bright white)
-    const coreGeometry = new CylinderGeometry(0.01, 0.008, this.bladeLength, 8);
+    // Create middle layer (pulsating core)
+    const coreGeometry = new CylinderGeometry(0.03, 0.025, this.bladeLength, 12);
     const segmentCoreMaterial = new MeshBasicMaterial({
-      color: 0xffffff,
+      color: new Color(this.bladeColor).lerp(new Color(0xffffff), 0.5),
       transparent: true,
-      opacity: 0.9
+      opacity: 0.7,
+      blending: AdditiveBlending
     });
     this.bladeCore = new Mesh(coreGeometry, segmentCoreMaterial);
     this.bladeCore.position.y = this.bladeLength / 2;
     this.blade.add(this.bladeCore);
     
     // Create plasma core (very bright white center)
-    const plasmaGeometry = new CylinderGeometry(0.005, 0.004, this.bladeLength, 6);
+    const plasmaGeometry = new CylinderGeometry(0.01, 0.008, this.bladeLength, 8);
     const plasmaMaterial = new MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
@@ -1094,8 +1148,8 @@ export class Lightsaber extends Group {
           const segment = this.bladeSegments[i];
           const segmentFactor = (i + 1) / this.bladeSegments.length;
           
-          segment.rotation.x += this.swingDirection.x * swingForce * segmentFactor;
-          segment.rotation.z += this.swingDirection.z * swingForce * segmentFactor;
+          segment.rotation.x += this.swingDirectionVector.x * swingForce * segmentFactor;
+          segment.rotation.z += this.swingDirectionVector.z * swingForce * segmentFactor;
         }
       }
     }
@@ -1104,7 +1158,7 @@ export class Lightsaber extends Group {
   triggerSwing(direction: Vector3 = new Vector3(1, 0, 0)): void {
     this.isSwinging = true;
     this.swingPhase = 0;
-    this.swingDirection.copy(direction).normalize();
+    this.swingDirectionVector.copy(direction).normalize();
     
     // Apply initial force to start the swing
     this.rotationalInertia.add(direction.clone().multiplyScalar(0.5));
@@ -1135,5 +1189,271 @@ export class Lightsaber extends Group {
   // Add a method to set the scene if not provided in constructor
   setScene(scene: Scene): void {
     this.scene = scene;
+  }
+
+  // Start a light attack
+  lightAttack(direction: 'horizontal' | 'vertical' | 'diagonal' = 'horizontal'): void {
+    if (this.swingCooldown > 0 || this.swingState !== 'idle') return;
+    
+    this.swingType = 'light';
+    this.swingDirection = direction;
+    this.swingState = 'windup';
+    this.swingProgress = 0;
+    this.swingDuration = this.lightAttackDuration;
+    this.swingStartTime = performance.now() / 1000;
+    
+    // Apply combo effects
+    const comboSpeedMultiplier = 1 + (this.comboCount * 0.1); // 10% faster per combo
+    this.swingDuration /= comboSpeedMultiplier;
+    
+    // Play swing sound
+    gameAudio.playSound('lightsaberSwing', { 
+      volume: 0.7,
+      detune: this.comboCount * 100 // Higher pitch with combo
+    });
+    
+    // Start the swing animation
+    this.animateSwing();
+  }
+  
+  // Start a heavy attack
+  heavyAttack(direction: 'horizontal' | 'vertical' | 'diagonal' = 'horizontal'): void {
+    if (this.swingCooldown > 0 || this.swingState !== 'idle') return;
+    
+    this.swingType = 'heavy';
+    this.swingDirection = direction;
+    this.swingState = 'windup';
+    this.swingProgress = 0;
+    this.swingDuration = this.heavyAttackDuration;
+    this.swingStartTime = performance.now() / 1000;
+    
+    // Apply combo effects
+    const comboSpeedMultiplier = 1 + (this.comboCount * 0.1); // 10% faster per combo
+    this.swingDuration /= comboSpeedMultiplier;
+    
+    // Play swing sound with lower pitch for heavy attack
+    gameAudio.playSound('lightsaberSwing', { 
+      volume: 0.9,
+      detune: -200 + (this.comboCount * 50) // Lower pitch for heavy, but increases with combo
+    });
+    
+    // Start the swing animation
+    this.animateSwing();
+  }
+  
+  // Set blocking state
+  setBlocking(blocking: boolean): void {
+    this.isBlocking = blocking;
+    
+    if (blocking) {
+      // Move to blocking stance
+      this.rotation.x = Math.PI * 0.25; // Angle blade upward
+      this.rotation.z = Math.PI * 0.1; // Slight tilt
+      
+      // Play block sound
+      gameAudio.playSound('lightsaberHum', { volume: 0.5, detune: 200 });
+    } else {
+      // Return to idle stance if not in another state
+      if (this.swingState === 'idle') {
+        this.rotation.x = 0;
+        this.rotation.z = 0;
+      }
+    }
+  }
+  
+  // Animate the swing based on current state and direction
+  private animateSwing(): void {
+    // Store original rotation
+    const originalRotation = {
+      x: this.rotation.x,
+      y: this.rotation.y,
+      z: this.rotation.z
+    };
+    
+    // Define animation phases
+    const windupDuration = this.swingType === 'light' ? 0.15 : 0.25;
+    const strikeDuration = this.swingType === 'light' ? 0.1 : 0.15;
+    const recoveryDuration = this.swingType === 'light' ? 0.15 : 0.3;
+    
+    // Animation loop
+    const animate = () => {
+      const currentTime = performance.now() / 1000;
+      const elapsed = currentTime - this.swingStartTime;
+      this.swingProgress = elapsed / this.swingDuration;
+      
+      // Determine current phase
+      if (elapsed < windupDuration) {
+        // Wind-up phase
+        this.swingState = 'windup';
+        const windupProgress = elapsed / windupDuration;
+        
+        // Apply wind-up motion based on direction
+        if (this.swingDirection === 'horizontal') {
+          // Pull back for horizontal swing
+          this.rotation.y = originalRotation.y - (Math.PI * 0.3 * windupProgress);
+          this.rotation.z = originalRotation.z - (Math.PI * 0.1 * windupProgress);
+        } else if (this.swingDirection === 'vertical') {
+          // Raise for vertical swing
+          this.rotation.x = originalRotation.x + (Math.PI * 0.4 * windupProgress);
+        } else if (this.swingDirection === 'diagonal') {
+          // Diagonal wind-up
+          this.rotation.x = originalRotation.x + (Math.PI * 0.2 * windupProgress);
+          this.rotation.y = originalRotation.y - (Math.PI * 0.2 * windupProgress);
+        }
+        
+      } else if (elapsed < windupDuration + strikeDuration) {
+        // Strike phase
+        this.swingState = 'strike';
+        const strikeProgress = (elapsed - windupDuration) / strikeDuration;
+        
+        // Activate hitbox during strike
+        this.hitboxActive = true;
+        
+        // Apply strike motion based on direction
+        if (this.swingDirection === 'horizontal') {
+          // Horizontal swing (from left to right)
+          this.rotation.y = originalRotation.y - (Math.PI * 0.3) + (Math.PI * 0.6 * strikeProgress);
+          this.rotation.z = originalRotation.z - (Math.PI * 0.1) + (Math.PI * 0.2 * strikeProgress);
+        } else if (this.swingDirection === 'vertical') {
+          // Vertical swing (from up to down)
+          this.rotation.x = originalRotation.x + (Math.PI * 0.4) - (Math.PI * 0.8 * strikeProgress);
+        } else if (this.swingDirection === 'diagonal') {
+          // Diagonal swing
+          this.rotation.x = originalRotation.x + (Math.PI * 0.2) - (Math.PI * 0.4 * strikeProgress);
+          this.rotation.y = originalRotation.y - (Math.PI * 0.2) + (Math.PI * 0.4 * strikeProgress);
+        }
+        
+      } else if (elapsed < this.swingDuration) {
+        // Recovery phase
+        this.swingState = 'recovery';
+        const recoveryProgress = (elapsed - windupDuration - strikeDuration) / recoveryDuration;
+        
+        // Deactivate hitbox
+        this.hitboxActive = false;
+        
+        // Apply recovery motion (return to original position with slight overshoot)
+        if (this.swingDirection === 'horizontal') {
+          const overshoot = Math.sin(recoveryProgress * Math.PI) * 0.1;
+          this.rotation.y = originalRotation.y + (Math.PI * 0.3 * (1 - recoveryProgress)) + overshoot;
+          this.rotation.z = originalRotation.z + (Math.PI * 0.1 * (1 - recoveryProgress));
+        } else if (this.swingDirection === 'vertical') {
+          const overshoot = Math.sin(recoveryProgress * Math.PI) * 0.1;
+          this.rotation.x = originalRotation.x - (Math.PI * 0.4 * (1 - recoveryProgress)) - overshoot;
+        } else if (this.swingDirection === 'diagonal') {
+          const overshoot = Math.sin(recoveryProgress * Math.PI) * 0.1;
+          this.rotation.x = originalRotation.x - (Math.PI * 0.2 * (1 - recoveryProgress)) - overshoot;
+          this.rotation.y = originalRotation.y + (Math.PI * 0.2 * (1 - recoveryProgress)) + overshoot;
+        }
+        
+      } else {
+        // Swing complete
+        this.swingState = 'idle';
+        this.rotation.x = originalRotation.x;
+        this.rotation.y = originalRotation.y;
+        this.rotation.z = originalRotation.z;
+        
+        // Set cooldown
+        this.swingCooldown = this.swingType === 'light' ? this.lightAttackCooldown : this.heavyAttackCooldown;
+        
+        // Update combo
+        this.comboCount = Math.min(5, this.comboCount + 1);
+        this.lastSwingTime = currentTime;
+        
+        return; // End animation
+      }
+      
+      // Continue animation
+      requestAnimationFrame(animate);
+    };
+    
+    // Start animation
+    animate();
+  }
+
+  // Check for hits with the lightsaber
+  private checkHits(): void {
+    // Get the scene
+    const scene = this.parent.parent;
+    if (!scene) return;
+    
+    // Find the actual Scene object by traversing up the hierarchy
+    let actualScene = scene;
+    while (actualScene && !(actualScene as any).isScene) {
+      actualScene = actualScene.parent;
+    }
+    
+    if (!actualScene) {
+      console.warn('Could not find Scene object in hierarchy');
+      return;
+    }
+    
+    // Get blade tip and base positions in world space
+    const bladeTip = this.localToWorld(new Vector3(0, this.hiltLength + this.bladeLength, 0));
+    const bladeBase = this.localToWorld(new Vector3(0, this.hiltLength, 0));
+    
+    // Find potential targets
+    scene.traverse((object) => {
+      // Skip self and already hit targets
+      if (object === this || object === this.parent || this.hitTargets.has(object)) return;
+      
+      // Check if object is an enemy or destructible
+      if (object.name === 'enemy' && isDamageable(object)) {
+        // Simple distance check to blade line segment
+        const distanceToLine = this.distanceToLineSegment(
+          object.position, 
+          bladeBase,
+          bladeTip
+        );
+        
+        // If within hitbox radius, register a hit
+        if (distanceToLine < this.hitboxRadius + 0.5) { // Add object radius approximation
+          this.hitTargets.add(object);
+          
+          // Calculate damage based on swing type and combo
+          const baseDamage = this.swingType === 'light' ? this.lightAttackDamage : this.heavyAttackDamage;
+          const comboDamageMultiplier = 1 + (this.comboCount * 0.05); // 5% more damage per combo
+          const damage = baseDamage * comboDamageMultiplier;
+          
+          // Apply damage to the target
+          object.takeDamage(damage, this.parent.position);
+          
+          // Create hit effect
+          createHitEffect(actualScene as Scene, object.position.clone(), this.bladeColor);
+          
+          // Play hit sound
+          gameAudio.playSound('lightsaberHit', { volume: 0.8 });
+        }
+      } else if (object.userData.destructible && isDestructible(object)) {
+        // Handle destructible objects
+        object.destroy();
+        
+        // Create destruction effect
+        createHitEffect(actualScene as Scene, object.position.clone(), '#ffaa00');
+        
+        // Play destruction sound
+        gameAudio.playSound('objectDestroyed', { volume: 0.7 });
+      }
+    });
+  }
+  
+  // Helper to calculate distance from point to line segment
+  private distanceToLineSegment(point: Vector3, lineStart: Vector3, lineEnd: Vector3): number {
+    const line = new Vector3().subVectors(lineEnd, lineStart);
+    const lineLength = line.length();
+    line.normalize();
+    
+    const pointToStart = new Vector3().subVectors(point, lineStart);
+    const projection = pointToStart.dot(line);
+    
+    // If projection is outside the line segment, use distance to nearest endpoint
+    if (projection <= 0) {
+      return pointToStart.length();
+    } else if (projection >= lineLength) {
+      return new Vector3().subVectors(point, lineEnd).length();
+    }
+    
+    // Calculate perpendicular distance to line
+    const projectedPoint = new Vector3().copy(lineStart).add(line.multiplyScalar(projection));
+    return new Vector3().subVectors(point, projectedPoint).length();
   }
 }

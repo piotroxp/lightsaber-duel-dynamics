@@ -38,6 +38,28 @@ enum PlayerState {
 }
 
 export class Player extends Group {
+  // Add explicit declarations to help TypeScript recognize inherited properties
+  declare position: Vector3;
+  declare quaternion: Quaternion;
+  declare parent: Object3D;
+  
+  // Add missing properties for movement and physics
+  private velocity: Vector3 = new Vector3();
+  private moveDirection: Vector3 = new Vector3();
+  private gravity: number = 9.8;
+  private jumpForce: number = 5;
+  private height: number = 1.8;
+  private isGrounded: boolean = true;
+  private isJumping: boolean = false;
+  private isJumpPressed: boolean = false;
+  private isForwardPressed: boolean = false;
+  private isBackwardPressed: boolean = false;
+  private isLeftPressed: boolean = false;
+  private isRightPressed: boolean = false;
+  private isAttackPressed: boolean = false;
+  private isHeavyAttackPressed: boolean = false;
+  private isBlockPressed: boolean = false;
+  
   private camera: Camera;
   private lightsaber: Lightsaber;
   private scene: Scene;
@@ -48,10 +70,7 @@ export class Player extends Group {
   private isMovingBackward: boolean = false;
   private isMovingLeft: boolean = false;
   private isMovingRight: boolean = false;
-  private isJumping: boolean = false;
   private isCrouching: boolean = false;
-  private isAttackPressed: boolean = false;
-  private isBlockPressed: boolean = false;
   private isLightsaberActive: boolean = false;
   private state: PlayerState = PlayerState.IDLE;
   private attackCooldown: number = 0.5; // seconds
@@ -77,9 +96,6 @@ export class Player extends Group {
   
   // Physics parameters
   private jumpVelocity: number = 0;
-  private gravity: number = 30; // Increased gravity strength
-  private jumpStrength: number = 8; // Initial jump velocity
-  private isGrounded: boolean = true;
   private normalHeight: number = 1.7; // Normal camera height
   private crouchHeight: number = 0.8; // Crouched camera height
   private currentHeight: number = 1.7; // Current camera height
@@ -172,7 +188,7 @@ export class Player extends Group {
           event.preventDefault(); // Prevent browser scrolling
           if (this.isGrounded) {
             this.isJumping = true;
-            this.jumpVelocity = this.jumpStrength;
+            this.jumpVelocity = this.jumpForce;
             this.isGrounded = false;
             console.log(`Jump initiated: velocity=${this.jumpVelocity}`);
           }
@@ -1054,5 +1070,109 @@ export class Player extends Group {
         maxHealth: this.maxHealth 
       } 
     });
+  }
+
+  private handleJumping(deltaTime: number): void {
+    // Apply gravity
+    if (!this.isGrounded) {
+      this.velocity.y -= this.gravity * deltaTime;
+    }
+    
+    // Handle jump input
+    if (this.isJumpPressed && this.isGrounded && !this.isJumping) {
+      this.velocity.y = this.jumpForce;
+      this.isJumping = true;
+      this.isGrounded = false;
+      
+      // Play jump sound
+      gameAudio.playSound('jump', { volume: 0.5 });
+    }
+    
+    // Move player based on velocity
+    this.position.y += this.velocity.y * deltaTime;
+    
+    // Check for ground collision
+    if (this.position.y <= this.height / 2) {
+      this.position.y = this.height / 2;
+      this.isGrounded = true;
+      this.isJumping = false; // Reset jumping flag when grounded
+      this.velocity.y = 0;
+    }
+  }
+
+  handleInput(deltaTime: number): void {
+    // Skip if dead
+    if (this.state === PlayerState.DEAD) return;
+    
+    // Handle movement input
+    this.moveDirection.x = 0;
+    this.moveDirection.z = 0;
+    
+    if (this.isForwardPressed) this.moveDirection.z = -1;
+    if (this.isBackwardPressed) this.moveDirection.z = 1;
+    if (this.isLeftPressed) this.moveDirection.x = -1;
+    if (this.isRightPressed) this.moveDirection.x = 1;
+    
+    // Normalize movement vector to prevent faster diagonal movement
+    if (this.moveDirection.length() > 0) {
+      this.moveDirection.normalize();
+    }
+    
+    // Handle attack input
+    if (this.isAttackPressed && this.lightsaber) {
+      // Determine swing direction based on movement
+      let swingDirection: 'horizontal' | 'vertical' | 'diagonal' = 'horizontal';
+      
+      if (Math.abs(this.moveDirection.x) > 0.7) {
+        swingDirection = 'horizontal';
+      } else if (this.moveDirection.z > 0.7) {
+        swingDirection = 'vertical';
+      } else if (Math.abs(this.moveDirection.x) > 0.3 && Math.abs(this.moveDirection.z) > 0.3) {
+        swingDirection = 'diagonal';
+      }
+      
+      // Perform light attack
+      this.lightsaber.lightAttack(swingDirection);
+      this.state = PlayerState.ATTACKING;
+      this.isAttackPressed = false; // Reset to prevent continuous attacks
+    }
+    
+    // Handle heavy attack input
+    if (this.isHeavyAttackPressed && this.lightsaber) {
+      // Determine swing direction based on movement
+      let swingDirection: 'horizontal' | 'vertical' | 'diagonal' = 'horizontal';
+      
+      if (Math.abs(this.moveDirection.x) > 0.7) {
+        swingDirection = 'horizontal';
+      } else if (this.moveDirection.z > 0.7) {
+        swingDirection = 'vertical';
+      } else if (Math.abs(this.moveDirection.x) > 0.3 && Math.abs(this.moveDirection.z) > 0.3) {
+        swingDirection = 'diagonal';
+      }
+      
+      // Perform heavy attack
+      this.lightsaber.heavyAttack(swingDirection);
+      this.state = PlayerState.ATTACKING;
+      this.isHeavyAttackPressed = false; // Reset to prevent continuous attacks
+    }
+    
+    // Handle block input
+    if (this.isBlockPressed && this.lightsaber) {
+      this.lightsaber.setBlocking(true);
+      this.state = PlayerState.BLOCKING;
+    } else if (this.state === PlayerState.BLOCKING && this.lightsaber) {
+      this.lightsaber.setBlocking(false);
+      this.state = PlayerState.IDLE;
+    }
+    
+    // Handle jump input
+    if (this.isJumpPressed && this.isGrounded && !this.isJumping) {
+      this.velocity.y = this.jumpForce;
+      this.isJumping = true;
+      this.isGrounded = false;
+      
+      // Play jump sound
+      gameAudio.playSound('jump', { volume: 0.5 });
+    }
   }
 }
