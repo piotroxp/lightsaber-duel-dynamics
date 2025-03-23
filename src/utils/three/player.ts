@@ -353,9 +353,18 @@ export class Player extends Group {
   }
   
   getLightsaberPosition(): Vector3 {
-    const position = this.lightsaber ? this.lightsaber.getBladeTipPosition() : this.position.clone();
-    console.log("[PLAYER] Lightsaber position:", position);
-    return position;
+    try {
+      if (this.lightsaber && typeof this.lightsaber.getBladeTipPosition === 'function') {
+        return this.lightsaber.getBladeTipPosition();
+      } else {
+        const offset = new Vector3(0.8, 1.0, 0.5);
+        const rotatedOffset = offset.clone().applyQuaternion(this.quaternion);
+        return this.position.clone().add(rotatedOffset);
+      }
+    } catch (error) {
+      console.error("Error getting lightsaber position:", error);
+      return this.position.clone().add(new Vector3(0, 1, 0));
+    }
   }
   
   getLightsaberRotation(): Quaternion {

@@ -110,6 +110,9 @@ export class CombatSystem {
         }
       }
     }
+
+    // Check for player attack
+    this.checkPlayerAttack(deltaTime);
   }
   
   private checkPlayerAttacks(deltaTime: number): void {
@@ -380,6 +383,41 @@ export class CombatSystem {
       }, 3000);
     } catch (error) {
       console.error("Error creating scar mark:", error);
+    }
+  }
+
+  checkPlayerAttack(deltaTime: number): void {
+    if (!this.player.isAttacking()) return;
+    
+    const playerSaberPosition = this.player.getLightsaberPosition();
+    const attackDirection = this.player.getDirection();
+    
+    for (const enemy of this.enemies) {
+      if (!enemy.isAlive()) continue;
+      
+      const enemyPosition = enemy.position;
+      const distance = playerSaberPosition.distanceTo(enemyPosition);
+      
+      if (distance < 2.5) {
+        console.log("🎯 HIT DETECTED! Distance:", distance);
+        
+        // Apply damage more consistently
+        const damage = 20; // Consistent damage amount
+        
+        // CRITICAL FIX: Ensure enemy takes damage
+        enemy.takeDamage(damage, this.player.getPosition());
+        
+        // Dispatch event for UI update
+        const healthChangeEvent = new CustomEvent('enemyHealthChanged', {
+          detail: {
+            health: enemy.getHealth(),
+            maxHealth: enemy.getMaxHealth()
+          }
+        });
+        window.dispatchEvent(healthChangeEvent);
+        
+        return; // Only hit one enemy at a time
+      }
     }
   }
 }
