@@ -51,8 +51,8 @@ export class CombatSystem {
       for (const enemy of this.enemies) {
         if (!enemy.isAlive()) continue;
         
-        // Check distance between player and enemy
-        const distanceToEnemy = enemy.position.distanceTo(playerPos);
+        // Calculate distance between player and enemy
+        const distance = playerPos.distanceTo(enemy.position);
         
         // If in strike range, apply damage
         if (distanceToEnemy < 2.5) {
@@ -76,7 +76,8 @@ export class CombatSystem {
             gameAudio.playSound('enemyHit', { volume: 0.8 });
             
             // Force feedback
-            this.applyCameraShake(0.3);
+            this.applyCameraShake(0.3);    
+            this.applyDamageToEnemy(enemy, 25, playerPos);
             
             // Only hit one enemy per swing
             break;
