@@ -133,20 +133,32 @@ export class GameScene {
   }
   
   private setupCamera(): void {
-    // Create and position the camera
-    this.camera = new PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    // Create a perspective camera with good defaults for first-person view
+    this.camera = new PerspectiveCamera(
+      75, // Field of view
+      window.innerWidth / window.innerHeight, // Aspect ratio
+      0.1, // Near clipping plane
+      1000 // Far clipping plane
+    );
     
-    // Position the camera higher and further back to see the scene clearly
-    this.camera.position.set(0, 5, 8); // Higher and further back
-    this.camera.lookAt(0, 0, 0); // Look at the center
+    // Position camera for a first-person view
+    this.camera.position.set(0, 1.8, 0); // Set at player eye level
+    console.log("Camera positioned at:", this.camera.position);
     
-    // Create controls
+    // Initialize pointer lock controls
     this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
     
-    // Add camera to scene for reference
-    this.scene.add(this.camera);
-    
-    console.log("Camera positioned at:", this.camera.position);
+    // IMPORTANT: Make camera a child of player to restore first-person view
+    this.controls.addEventListener('lock', () => {
+      // When controls lock, ensure camera is properly positioned
+      if (this.player) {
+        this.player.add(this.camera);
+        // Position camera at head height
+        this.camera.position.set(0, 0.9, 0);
+        this.camera.rotation.set(0, 0, 0);
+        console.log("First-person camera attached to player");
+      }
+    });
   }
   
   private setupLighting(): void {
@@ -744,12 +756,12 @@ export class GameScene {
   private setupPlayer(): void {
     console.log("Setting up player");
     
-    // Instead of calling initialize which doesn't exist, we'll do the setup directly
-    // Comment out the problematic line
-    // this.player.initialize();
-    
     // Position player properly
     this.player.position.set(0, 1, 0);
+    
+    // Restore first-person view by making camera a child of player
+    this.camera.position.set(0, 1.8, 0); // Position at eye level
+    this.player.add(this.camera);
     
     // Activate the lightsaber if needed
     try {
@@ -762,6 +774,7 @@ export class GameScene {
     
     // Additional player setup if needed
     console.log("Player positioned at:", this.player.position);
+    console.log("First-person camera attached at:", this.camera.position);
   }
 
   // Add a method to update enemy health UI

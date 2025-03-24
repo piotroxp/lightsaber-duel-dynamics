@@ -364,27 +364,31 @@ export class Player extends Group {
 
     // Handle movement based on input directions
     if (this.moveDirection.length() > 0) {
-      // Convert input direction from camera space to world space
+      // Get camera direction for movement calculation
       const cameraDirection = new Vector3();
       this.camera.getWorldDirection(cameraDirection);
-      cameraDirection.y = 0;
+      cameraDirection.y = 0; // Keep movement horizontal
       cameraDirection.normalize();
-
-      // Get right vector
-      const right = new Vector3(cameraDirection.z, 0, -cameraDirection.x);
-
-      // CRITICAL FIX: Use directly calculated movement vector
-      const moveVector = new Vector3();
-      if (this.isForwardPressed) moveVector.add(cameraDirection.clone().multiplyScalar(-1));
-      if (this.isBackwardPressed) moveVector.add(cameraDirection.clone());
-      if (this.isLeftPressed) moveVector.add(right.clone().multiplyScalar(-1));
-      if (this.isRightPressed) moveVector.add(right.clone());
       
-      // Only normalize and apply if we're actually moving
+      // Calculate right vector from camera direction
+      const rightVector = new Vector3();
+      rightVector.crossVectors(new Vector3(0, 1, 0), cameraDirection).normalize();
+      
+      // Create movement vector in world space
+      const moveVector = new Vector3();
+      
+      // IMPORTANT: Corrected directions
+      // Forward = camera direction (not inverted)
+      // Left/Right = perpendicular to camera direction (not inverted)
+      if (this.isForwardPressed) moveVector.add(cameraDirection);
+      if (this.isBackwardPressed) moveVector.sub(cameraDirection);
+      if (this.isLeftPressed) moveVector.add(rightVector);
+      if (this.isRightPressed) moveVector.sub(rightVector);
+      
+      // Apply movement if there is any
       if (moveVector.length() > 0) {
         moveVector.normalize().multiplyScalar(this.moveSpeed * deltaTime);
         this.position.add(moveVector);
-        console.log(`Player moved to: ${this.position.x.toFixed(2)}, ${this.position.y.toFixed(2)}, ${this.position.z.toFixed(2)}`);
       }
       
       this.state = PlayerState.MOVING;
@@ -405,6 +409,25 @@ export class Player extends Group {
     // Update cooldowns
     if (this.attackCooldown > 0) {
       this.attackCooldown -= deltaTime;
+    }
+
+    // Handle attack inputs
+    if (this.isAttackPressed) {
+      // Clear flag right away to prevent multiple attacks
+      this.isAttackPressed = false;
+      
+      if (this.state !== PlayerState.ATTACKING && this.lightsaber && this.lightsaber.isActive()) {
+        this.attack();
+      }
+    }
+    
+    if (this.isHeavyAttackPressed) {
+      // Clear flag right away to prevent multiple attacks
+      this.isHeavyAttackPressed = false;
+      
+      if (this.state !== PlayerState.ATTACKING && this.lightsaber && this.lightsaber.isActive()) {
+        this.heavyAttack();
+      }
     }
   }
   
@@ -463,46 +486,58 @@ export class Player extends Group {
     const currentTime = performance.now() / 1000;
     if (currentTime - this.lastAttackTime < this.attackCooldown) return;
     
+    console.log("Player attacking - light attack");
     this.lastAttackTime = currentTime;
     this.state = PlayerState.ATTACKING;
+    
+    // Start swing animation
+    this.isSwinging = true;
+    this.swingStartTime = performance.now();
     this.damageAppliedInCurrentAttack = false;
     
-    // Determine movement direction for swing
-    let movementDirection: 'left' | 'right' | 'forward' | 'none' = 'none';
+    // Play sound
+    gameAudio.playSound('lightsaberSwing', { volume: 0.7 });
     
-    if (this.isMovingLeft) {
-      movementDirection = 'left';
-    } else if (this.isMovingRight) {
-      movementDirection = 'right';
-    } else if (this.isMovingForward) {
-      movementDirection = 'forward';
-    }
-    
-    // Swing lightsaber using the enhanced swing method with direction
-    this.lightsaber.swing(movementDirection);
-    
-    // Reset state after attack animation
+    // Reset state after attack duration
     setTimeout(() => {
       if (this.state === PlayerState.ATTACKING) {
         this.state = PlayerState.IDLE;
       }
-    }, 300);
+    }, this.swingDuration);
   }
   
-  private block(): void {
-    if (this.state === PlayerState.DEAD || this.state === PlayerState.STAGGERED) return;
+  private heavyAttack(): void {
+    if (this.state === PlayerState.ATTACKING || 
+        this.state === PlayerState.DEAD || 
+        this.state === PlayerState.STAGGERED) return;
     
-    // Set blocking state
-    this.state = PlayerState.BLOCKING;
+    // Check cooldown
+    const currentTime = performance.now() / 1000;
+    if (currentTime - this.lastAttackTime < this.attackCooldown * 1.5) return;
     
-    // Block with lightsaber
-    this.lightsaber.block();
+    console.log("Player attacking - heavy attack");
+    this.lastAttackTime = currentTime;
+    this.state = PlayerState.ATTACKING;
     
-    // Play block sound
-    gameAudio.playSound('lightsaberHum', { volume: 0.5 });
+    // Longer duration for heavy attack
+    this.swingDuration = 800;
     
-    // Keep track of block time
-    this.lastBlockTime = performance.now() / 1000;
+    // Start swing animation
+    this.isSwinging = true;
+    this.swingStartTime = performance.now();
+    this.damageAppliedInCurrentAttack = false;
+    
+    // Play sound
+    gameAudio.playSound('lightsaberSwing', { volume: 0.9, detune: -300 });
+    
+    // Reset state after attack duration
+    setTimeout(() => {
+      if (this.state === PlayerState.ATTACKING) {
+        this.state = PlayerState.IDLE;
+      }
+      // Reset swing duration for normal attacks
+      this.swingDuration = 500;
+    }, this.swingDuration);
   }
   
   public takeDamage(amount: number, attackerPosition?: Vector3): void {
@@ -1090,16 +1125,23 @@ export class Player extends Group {
       scene: this.scene
     });
     
-    // Position lightsaber
-    this.lightsaber.position.copy(this.lightsaberOffset);
-    
-    // Ensure lightsaber is aligned properly
-    this.lightsaber.rotation.set(0, 0, 0);
+    // Position lightsaber for first-person view
+    this.lightsaber.position.set(0.5, -0.3, -0.7);
+    this.lightsaber.rotation.set(Math.PI / 12, -Math.PI / 6, 0);
     
     // Add to player
-    this.add(this.lightsaber);
+    this.camera.add(this.lightsaber);
     
     console.log("Lightsaber created and added to player at position:", this.lightsaber.position);
+    
+    // Activate lightsaber immediately
+    setTimeout(() => {
+      if (this.lightsaber) {
+        this.lightsaber.activate();
+        this.isLightsaberActive = true;
+        console.log("Lightsaber activated on creation");
+      }
+    }, 100);
   }
 
   // Implement key release event listener that was missing
@@ -1197,5 +1239,36 @@ export class Player extends Group {
     velocity.applyEuler(rotation);
     this.position.add(velocity.multiplyScalar(deltaTime));
     this.position.add(this.velocity.clone().multiplyScalar(deltaTime));
+  }
+
+  // Add a method to update lightsaber swing animation
+  private updateLightsaberSwing(deltaTime: number): void {
+    if (!this.lightsaber || !this.isSwinging) return;
+    
+    const elapsed = performance.now() - this.swingStartTime;
+    const progress = Math.min(elapsed / this.swingDuration, 1);
+    
+    // Simple swing animation - arc movement
+    if (progress < 1) {
+      // Calculate swing angle based on progress (0 to 1)
+      const swingAngle = Math.sin(progress * Math.PI) * (Math.PI / 2);
+      
+      // Reset to base position
+      this.lightsaber.rotation.set(Math.PI / 12, -Math.PI / 6, 0);
+      
+      // Apply swing rotation - rotate around z-axis for horizontal swing
+      this.lightsaber.rotateZ(swingAngle);
+      
+      // Add some forward motion during swing
+      const forwardPush = Math.sin(progress * Math.PI) * 0.2;
+      this.lightsaber.position.z = -0.7 - forwardPush;
+    } else {
+      // Swing complete
+      this.isSwinging = false;
+      
+      // Return to neutral position
+      this.lightsaber.position.z = -0.7;
+      this.lightsaber.rotation.set(Math.PI / 12, -Math.PI / 6, 0);
+    }
   }
 }
