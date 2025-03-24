@@ -148,6 +148,11 @@ export class Enemy extends Group {
       return;
     }
     
+    // CRITICAL FIX: Save target position
+    if (playerPosition) {
+      this.targetPosition.copy(playerPosition);
+    }
+    
     // Process attack cooldown
     if (this.attackCooldown > 0) {
       this.attackCooldown -= deltaTime;
@@ -167,7 +172,7 @@ export class Enemy extends Group {
     // Update enemy animations
     this.updateAnimation(deltaTime);
     
-    // IMPROVED: Force aggressive AI behavior
+    // CRITICAL FIX: Ensure enemy attacks the player
     this.updateAggressive(deltaTime, playerPosition, playerDirection);
     
     // Update lightsaber
@@ -178,43 +183,78 @@ export class Enemy extends Group {
   
   // New method to force more aggressive enemy behavior
   private updateAggressive(deltaTime: number, playerPosition: Vector3, playerDirection: Vector3): void {
-    // Skip if dead
-    if (this.state === EnemyState.DEAD) return;
+    // CRITICAL FIX: Force enemy to see the player
+    if (!playerPosition) {
+      console.error("No player position provided to enemy");
+      return;
+    }
     
-    // CRITICAL: Store player position for attacking
-    this.targetPosition = playerPosition.clone();
+    // Save target position
+    this.targetPosition.copy(playerPosition);
     
     // Calculate distance to player
     const distanceToPlayer = this.position.distanceTo(playerPosition);
     
-    // Always face the player
-    this.lookAt(playerPosition.x, this.position.y, playerPosition.z);
+    console.log(`Enemy distance to player: ${distanceToPlayer.toFixed(2)}`);
     
-    // Attack or pursue based on distance
-    if (distanceToPlayer <= this.attackRange) {
-      // Get current time for cooldown
-      const currentTime = performance.now() / 1000;
+    // If player is within aggro range, move toward them
+    if (distanceToPlayer < this.aggroRange) {
+      console.log("Enemy has player in aggro range");
       
-      // Attack frequently when in range
-      if (currentTime - this.lastAttackTime > 1.5) {
-        console.log("Enemy attempting attack at player:", playerPosition);
-        this.attack();
-        this.lastAttackTime = currentTime;
-      } else {
-        // Strafe around player between attacks
-        this.strafeAroundTarget(deltaTime, playerPosition);
-      }
-    } else if (distanceToPlayer <= this.aggroRange) {
-      // Move toward player when outside attack range
-      const moveSpeed = this.speed * deltaTime;
-      const moveDirection = new Vector3()
+      // Calculate direction to player
+      const directionToPlayer = new Vector3()
         .subVectors(playerPosition, this.position)
         .normalize();
-      moveDirection.y = 0;
       
-      // Apply movement
-      this.position.add(moveDirection.multiplyScalar(moveSpeed));
-      this.state = EnemyState.PURSUING;
+      // Look at player
+      this.lookAt(playerPosition);
+      
+      // Move toward player if not too close
+      if (distanceToPlayer > this.tooCloseRange) {
+        // Move toward player
+        const moveSpeed = this.speed * deltaTime;
+        this.position.addScaledVector(directionToPlayer, moveSpeed);
+        console.log(`Enemy moving toward player: ${this.position.x.toFixed(2)}, ${this.position.z.toFixed(2)}`);
+      }
+      
+      // CRITICAL FIX: Perform attack when in range and cooldown is ready
+      if (distanceToPlayer < this.attackRange && this.attackCooldown <= 0) {
+        console.log("Enemy initiating attack!");
+        this.attack();
+        // Set a longer cooldown to give player chance to react
+        this.attackCooldown = 2.0;
+      }
+    } else {
+      // Wander randomly when player is out of range
+      this.wanderTimer += deltaTime;
+      
+      if (this.wanderTimer > 3.0) {
+        // Reset wander timer
+        this.wanderTimer = 0;
+        
+        // Pick new random point to wander to
+        const randomAngle = Math.random() * Math.PI * 2;
+        const randomDistance = 2 + Math.random() * 3;
+        
+        this.wanderTarget.set(
+          this.position.x + Math.cos(randomAngle) * randomDistance,
+          0,
+          this.position.z + Math.sin(randomAngle) * randomDistance
+        );
+        
+        console.log("Enemy wandering to new position:", this.wanderTarget);
+      }
+      
+      // Move toward wander target
+      const directionToTarget = new Vector3()
+        .subVectors(this.wanderTarget, this.position)
+        .normalize();
+      
+      // If we're not close to the target yet, move toward it
+      if (this.position.distanceTo(this.wanderTarget) > 0.5) {
+        this.position.addScaledVector(directionToTarget, this.speed * 0.5 * deltaTime);
+        this.lookAt(this.wanderTarget);
+      }
     }
   }
   

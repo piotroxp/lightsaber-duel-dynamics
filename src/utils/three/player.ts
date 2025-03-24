@@ -106,6 +106,9 @@ export class Player extends Group {
   private readonly positionHistorySize = 10; // Number of positions to keep
   private readonly saberInertia = 0.75; // Reduced inertia for faster response
   
+  // Add missing property for debug output
+  private frameCount: number = 0;
+  
   constructor(scene: Scene, camera: Camera) {
     super();
     
@@ -403,6 +406,11 @@ export class Player extends Group {
 
     // Update lightsaber position and physics
     if (this.lightsaber) {
+      // Update lightsaber swing animation if attacking
+      if (this.state === PlayerState.ATTACKING) {
+        this.updateLightsaberSwing(deltaTime);
+      }
+      
       this.lightsaber.update(deltaTime);
     }
 
@@ -416,7 +424,8 @@ export class Player extends Group {
       // Clear flag right away to prevent multiple attacks
       this.isAttackPressed = false;
       
-      if (this.state !== PlayerState.ATTACKING && this.lightsaber && this.lightsaber.isActive()) {
+      if (this.state !== PlayerState.ATTACKING && this.lightsaber) {
+        console.log("Processing attack input");
         this.attack();
       }
     }
@@ -425,9 +434,17 @@ export class Player extends Group {
       // Clear flag right away to prevent multiple attacks
       this.isHeavyAttackPressed = false;
       
-      if (this.state !== PlayerState.ATTACKING && this.lightsaber && this.lightsaber.isActive()) {
+      if (this.state !== PlayerState.ATTACKING && this.lightsaber) {
+        console.log("Processing heavy attack input");
         this.heavyAttack();
       }
+    }
+
+    // Debug output for lightsaber visibility
+    if (this.lightsaber && this.frameCount % 120 === 0) {
+      console.log("Lightsaber visible:", this.lightsaber.visible);
+      console.log("Lightsaber position:", this.lightsaber.position);
+      console.log("Is active:", this.lightsaber.isActive());
     }
   }
   
@@ -482,17 +499,14 @@ export class Player extends Group {
         this.state === PlayerState.DEAD || 
         this.state === PlayerState.STAGGERED) return;
     
-    // Check cooldown
-    const currentTime = performance.now() / 1000;
-    if (currentTime - this.lastAttackTime < this.attackCooldown) return;
-    
-    console.log("Player attacking - light attack");
-    this.lastAttackTime = currentTime;
+    console.log("Player light attack");
+    this.lastAttackTime = performance.now() / 1000;
     this.state = PlayerState.ATTACKING;
     
     // Start swing animation
     this.isSwinging = true;
     this.swingStartTime = performance.now();
+    this.swingDuration = 500; // ms
     this.damageAppliedInCurrentAttack = false;
     
     // Play sound
@@ -511,12 +525,8 @@ export class Player extends Group {
         this.state === PlayerState.DEAD || 
         this.state === PlayerState.STAGGERED) return;
     
-    // Check cooldown
-    const currentTime = performance.now() / 1000;
-    if (currentTime - this.lastAttackTime < this.attackCooldown * 1.5) return;
-    
-    console.log("Player attacking - heavy attack");
-    this.lastAttackTime = currentTime;
+    console.log("Player heavy attack");
+    this.lastAttackTime = performance.now() / 1000;
     this.state = PlayerState.ATTACKING;
     
     // Longer duration for heavy attack
@@ -535,8 +545,6 @@ export class Player extends Group {
       if (this.state === PlayerState.ATTACKING) {
         this.state = PlayerState.IDLE;
       }
-      // Reset swing duration for normal attacks
-      this.swingDuration = 500;
     }, this.swingDuration);
   }
   
@@ -1125,21 +1133,39 @@ export class Player extends Group {
       scene: this.scene
     });
     
-    // Position lightsaber for first-person view
-    this.lightsaber.position.set(0.5, -0.3, -0.7);
-    this.lightsaber.rotation.set(Math.PI / 12, -Math.PI / 6, 0);
-    
-    // Add to player
+    // CRITICAL FIX: Add directly to camera for proper first-person view
     this.camera.add(this.lightsaber);
+    
+    // Position for proper FPS view - adjust position to be visible in front of camera
+    this.lightsaber.position.set(0.4, -0.5, -1);
+    this.lightsaber.rotation.set(0, 0, 0);
+    
+    // Force the lightsaber to be visible
+    this.lightsaber.visible = true;
     
     console.log("Lightsaber created and added to player at position:", this.lightsaber.position);
     
-    // Activate lightsaber immediately
+    // IMMEDIATE ACTIVATION: Don't delay activation
+    if (this.lightsaber) {
+      console.log("Immediately activating lightsaber");
+      this.lightsaber.activate();
+      this.isLightsaberActive = true;
+      
+      // Verify activation status
+      if (this.lightsaber.isActive()) {
+        console.log("Blade components verified");
+      } else {
+        console.error("Blade components missing");
+      }
+    }
+    
+    // Force another activation after a short delay as fallback
     setTimeout(() => {
       if (this.lightsaber) {
+        console.log("Delayed activation check");
         this.lightsaber.activate();
         this.isLightsaberActive = true;
-        console.log("Lightsaber activated on creation");
+        console.log("Lightsaber activation reinforced");
       }
     }, 100);
   }
