@@ -13,6 +13,7 @@ export class CombatSystem {
   private hitCooldown: number = 0.4; // seconds
   private lastHitTime: number = 0;
   private camera: Camera | null = null;
+  private attackCooldowns = new WeakMap<Enemy, number>();
   
   constructor(scene: Scene, player: Player) {
     this.scene = scene;
@@ -120,7 +121,7 @@ export class CombatSystem {
     }
 
     // Check for player attack
-    this.checkPlayerAttack(deltaTime);
+    this.checkPlayerAttacks(deltaTime);
   }
   
   private checkPlayerAttacks(deltaTime: number): void {
@@ -473,100 +474,17 @@ export class CombatSystem {
   }
 
   checkPlayerAttack(deltaTime: number): void {
-    // Skip if player is dead or not attacking
-    if (!this.player.isAlive() || !this.player.isAttacking()) return;
+    const now = Date.now();
     
-    // CRITICAL FIX: Skip if lightsaber is not active
-    if (!this.player.getLightsaber().isActive()) {
-      return;
-    }
-    
-    // CRITICAL FIX: Skip if player is too far from enemies (prevents remote killing)
-    const playerPosition = this.player.position;
-    let closestEnemyDistance = Infinity;
-    
-    for (const enemy of this.enemies) {
-      if (!enemy.isAlive()) continue;
-      const distance = enemy.position.distanceTo(playerPosition);
-      closestEnemyDistance = Math.min(closestEnemyDistance, distance);
-    }
-    
-    // If player is too far from any enemy, skip attack check
-    if (closestEnemyDistance > 3) {
-      return;
-    }
-    
-    // Skip if the player clicked on a UI element
-    if (this.player.clickedOnUI) {
-      return;
-    }
-    
-    // Check if we've already applied damage for this attack
-    if (this.player.hasAppliedDamageInCurrentAttack()) {
-      return;
-    }
-    
-    const playerSaberPosition = this.player.getLightsaberPosition();
-    
-    for (const enemy of this.enemies) {
-      if (!enemy.isAlive()) continue;
+    this.enemies.forEach(enemy => {
+      if (!enemy.isAlive() || this.attackCooldowns.get(enemy)! > now) return;
       
-      const enemyPosition = enemy.position;
-      // Get more precise collision points
-      const enemyTorsoPosition = enemyPosition.clone().add(new Vector3(0, 1.0, 0));
-      const distance = playerSaberPosition.distanceTo(enemyTorsoPosition);
-      
-      // Get player's facing direction
-      const playerDirection = this.player.getDirection();
-      
-      // Calculate vector from player to enemy
-      const playerToEnemy = enemyPosition.clone().sub(playerPosition).normalize();
-      
-      // Calculate dot product to check if player is facing the enemy
-      const facingEnemy = playerDirection.dot(playerToEnemy) > 0.3; // At least somewhat facing the enemy
-      
-      // More reasonable hit distance
-      if (distance < 1.5 && facingEnemy) {
-        console.log("🎯 HIT DETECTED! Distance:", distance);
-        
-        // Apply damage more consistently
-        const damage = 10; // Balanced damage amount
-        
-        // CRITICAL FIX: Ensure enemy takes damage
-        enemy.takeDamage(damage);
-        
-        // Mark that we've applied damage for this attack
-        this.player.setDamageAppliedInCurrentAttack(true);
-        
-        // Add a cooldown to prevent rapid damage
-        setTimeout(() => {
-          this.player.setDamageAppliedInCurrentAttack(false);
-        }, 800); // Longer cooldown for better balance
-        
-        // Dispatch event for UI update
-        const healthChangeEvent = new CustomEvent('enemyHealthChanged', {
-          detail: {
-            health: enemy.getHealth(),
-            maxHealth: enemy.getMaxHealth()
-          }
-        });
-        window.dispatchEvent(healthChangeEvent);
-        
-        // Create hit effect
-        createHitEffect(
-          this.scene,
-          enemyTorsoPosition,
-          '#ff3300'
-        );
-        
-        // Play hit sound
-        gameAudio.playSound('enemyHit', { volume: 0.7 });
-        
-        // Apply camera shake for feedback
-        this.applyCameraShake(0.3);
-        
-        return; // Only hit one enemy at a time
+      const distance = this.player.position.distanceTo(enemy.position);
+      if (distance < 2.5) {
+        enemy.takeDamage(20); // Consistent damage
+        this.attackCooldowns.set(enemy, now + 1000); // 1s cooldown
+        this.createHitEffect(enemy.position);
       }
-    }
+    });
   }
 }

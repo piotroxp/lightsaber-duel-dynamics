@@ -371,173 +371,17 @@ export class Lightsaber extends Group {
   }
   
   activate(): void {
-    // If already active, skip activation
     if (this.active) return;
-    
     this.active = true;
-    
-    // Create blade if not already created
-    if (!this.blade || !this.bladeCore || !this.plasmaCore) {
-      this.createBlade();
-    }
-    
-    // Make blade visible
-    if (this.blade) {
-      this.blade.visible = true;
-    }
-    
-    // Enable light
-    if (this.bladeLight) {
-      this.bladeLight.visible = true;
-    }
-    
-    // Create glow particles if not exists
-    if (!this.glowEmitter && this.scene) {
-      this.glowEmitter = createLightsaberGlow(
-        this.scene, 
-        new Vector3(
-          this.position.x, 
-          this.position.y + this.hiltLength + this.bladeLength * 0.5, 
-          this.position.z
-        ),
-        this.bladeColor
-      );
-    }
-    
-    // Play activation sound
-    gameAudio.playSound('lightsaberOn', { volume: 0.7 });
-    
-    // Start activation animation
     this.activationProgress = 0;
-    const duration = 0.3; // seconds
-    const startTime = performance.now() / 1000;
-    
-    const animateActivation = () => {
-      const currentTime = performance.now() / 1000;
-      const elapsed = currentTime - startTime;
-      
-      this.activationProgress = Math.min(elapsed / duration, 1);
-      
-      // Scale the blade up
-      if (this.blade && this.bladeCore && this.plasmaCore && this.bladeFlare) {
-        this.blade.scale.y = this.activationProgress;
-        
-        // Update blade core
-        if (this.bladeCore.material instanceof MeshBasicMaterial) {
-          this.bladeCore.material.opacity = this.activationProgress * 0.9;
-        }
-        
-        // Update plasma core
-        if (this.plasmaCore.material instanceof MeshBasicMaterial) {
-          this.plasmaCore.material.opacity = this.activationProgress;
-        }
-        
-        // Update blade flare (tip)
-        if (this.bladeFlare.material instanceof MeshBasicMaterial) {
-          this.bladeFlare.material.opacity = this.activationProgress * 0.8;
-        }
-      }
-      
-      if (this.activationProgress < 1) {
-        requestAnimationFrame(animateActivation);
-      }
-    };
-    
-    animateActivation();
+    this.blade.visible = true;
+    gameAudio.playSound('saberOn');
   }
   
   deactivate(): void {
     if (!this.active) return;
-    
-    // Play deactivation sound
-    gameAudio.playSound('lightsaberOff', { volume: 0.5 });
-    
-    // Animate blade disappearance
-    const startTime = Date.now();
-    const duration = 200; // ms
-    let progress = 0;
-    
-    const animate = () => {
-      const elapsed = Date.now() - startTime;
-      progress = Math.min(elapsed / duration, 1);
-      
-      // Update blade visibility
-      if (this.bladeMesh.material instanceof MeshBasicMaterial) {
-        this.bladeMesh.material.opacity = (1 - progress) * 0.3;
-      }
-      
-      // Shrink blade into hilt
-      this.bladeMesh.scale.set(1, 1 - progress, 1);
-      // Move the blade down as it retracts
-      this.bladeMesh.position.y = this.hiltLength + (this.bladeLength * (1 - progress)) / 2;
-      
-      // Also shrink core and plasma core
-      if (this.bladeCore) {
-        this.bladeCore.scale.set(1, 1 - progress, 1);
-        this.bladeCore.position.y = this.hiltLength + (this.bladeLength * (1 - progress)) / 2;
-      }
-      
-      if (this.plasmaCore) {
-        this.plasmaCore.scale.set(1, 1 - progress, 1);
-        this.plasmaCore.position.y = this.hiltLength + (this.bladeLength * (1 - progress)) / 2;
-      }
-      
-      // Also hide the blade tip and flare
-      if (this.bladeFlare && this.bladeFlare.material instanceof MeshBasicMaterial) {
-        this.bladeFlare.material.opacity = (1 - progress) * 0.3;
-        this.bladeFlare.position.y = this.hiltLength + this.bladeLength * (1 - progress);
-      }
-      
-      // Hide all blade tips
-      this.traverse((child) => {
-        if (child !== this.bladeMesh && 
-            child !== this.bladeCore && 
-            child !== this.plasmaCore && 
-            child !== this.hilt && 
-            child instanceof Mesh && 
-            child.position.y > this.hiltLength) {
-         
-          if (child.material instanceof MeshBasicMaterial) {
-            child.material.opacity = (1 - progress) * child.material.opacity;
-          }
-          
-          // Scale down the tip
-          child.scale.set(1, 1 - progress, 1);
-         
-          // Move the tip position based on progress
-          if (child.name.includes('Tip')) {
-            child.position.y = this.hiltLength + this.bladeLength * (1 - progress);
-          }
-        }
-      });
-      
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      } else {
-        this.active = false;
-        // Hide all blade components when fully deactivated
-        this.bladeMesh.visible = false;
-        this.bladeCore.visible = false;
-        this.plasmaCore.visible = false;
-        this.bladeFlare.visible = false;
-        this.bladeLight.visible = false;
-        
-        // Hide all blade tips
-        this.traverse((child) => {
-          if (child !== this.bladeMesh && 
-              child !== this.bladeCore && 
-              child !== this.plasmaCore && 
-              child !== this.hilt && 
-              child instanceof Mesh && 
-              child.position.y > this.hiltLength) {
-            child.visible = false;
-          }
-        });
-      }
-    };
-    
-    // Start animation
-    animate();
+    this.active = false;
+    gameAudio.playSound('saberOff');
   }
   
   isActive(): boolean {
@@ -560,9 +404,7 @@ export class Lightsaber extends Group {
   }
   
   getBladeTopPosition(): Vector3 {
-    // Calculate the position of the top of the blade in world space
-    const bladeTop = new Vector3(0, this.hiltLength + this.bladeLength, 0); // Local position of blade top
-    return this.localToWorld(bladeTop.clone());
+    return new Vector3(0, this.hiltLength + this.bladeLength, 0).applyMatrix4(this.matrixWorld);
   }
   
   getSaberTipPosition(): Vector3 {
@@ -943,7 +785,6 @@ export class Lightsaber extends Group {
     }
     
     // Update only the activation button color
-    const colorValue = parseInt(color.replace('#', '0x'));
     this.traverse((child) => {
       if (child instanceof Mesh && 
           child.material instanceof MeshStandardMaterial && 
@@ -951,8 +792,8 @@ export class Lightsaber extends Group {
           child.material.emissiveIntensity > 0 &&
           child.position.y === this.hiltLength * 0.5) { // Only the activation button
         // This is the activation button, update its color
-        child.material.color.set(colorValue);
-        child.material.emissive.set(colorValue);
+        child.material.color.set(color);
+        child.material.emissive.set(color);
       }
     });
   }
@@ -986,83 +827,36 @@ export class Lightsaber extends Group {
     this.blade.add(this.bladeMesh);
     
     // Create middle layer (pulsating core)
-    const coreGeometry = new CylinderGeometry(0.03, 0.025, this.bladeLength, 12);
-    const segmentCoreMaterial = new MeshBasicMaterial({
+    const middleGeometry = new CylinderGeometry(0.03, 0.025, this.bladeLength, 12);
+    const middleMaterial = new MeshBasicMaterial({
       color: new Color(this.bladeColor).lerp(new Color(0xffffff), 0.5),
       transparent: true,
       opacity: 0.7,
       blending: AdditiveBlending
     });
-    this.bladeCore = new Mesh(coreGeometry, segmentCoreMaterial);
+    this.bladeCore = new Mesh(middleGeometry, middleMaterial);
     this.bladeCore.position.y = this.bladeLength / 2;
     this.blade.add(this.bladeCore);
     
-    // Create plasma core (very bright white center)
-    const plasmaGeometry = new CylinderGeometry(0.01, 0.008, this.bladeLength, 8);
-    const plasmaMaterial = new MeshBasicMaterial({
+    // Create inner core (very bright white center)
+    const coreGeometry = new CylinderGeometry(0.01, 0.008, this.bladeLength, 8);
+    const coreMaterial = new MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
       opacity: 1.0
     });
-    this.plasmaCore = new Mesh(plasmaGeometry, plasmaMaterial);
+    this.plasmaCore = new Mesh(coreGeometry, coreMaterial);
     this.plasmaCore.position.y = this.bladeLength / 2;
     this.blade.add(this.plasmaCore);
     
-    // Create blade flare (tip)
-    const flareGeometry = new SphereGeometry(0.03, 8, 8);
-    const flareMaterial = new MeshBasicMaterial({
-      color: this.bladeColor,
-      transparent: true,
-      opacity: 0.8,
-      blending: AdditiveBlending
-    });
-    this.bladeFlare = new Mesh(flareGeometry, flareMaterial);
-    this.bladeFlare.position.y = this.bladeLength;
-    this.blade.add(this.bladeFlare);
+    // Make sure blade is initially invisible if not active
+    this.blade.visible = this.active;
     
     // Add blade light
-    this.bladeLight = new PointLight(this.bladeColor, this.glowIntensity, 2.0);
-    this.bladeLight.position.y = this.bladeLength / 2;
-    this.blade.add(this.bladeLight);
-
-    // Create outer glow material
-    const glowColor = new Color(this.bladeColor);
-    const glowMaterial = new MeshBasicMaterial({
-      color: glowColor,
-      transparent: true,
-      opacity: 0.7,
-      blending: AdditiveBlending
-    });
+    this.createBladeLight();
     
-    // Number of blade segments for physics-based bending
-    const numSegments = 6;
-    const segmentLength = this.bladeLength / numSegments;
-    
-    // Create blade segments
-    for (let i = 0; i < numSegments; i++) {
-      // Inner core (white)
-      const coreGeometry = new CylinderGeometry(0.02, 0.02, segmentLength, 8);
-      const core = new Mesh(coreGeometry, segmentCoreMaterial);
-      core.position.y = i * segmentLength + segmentLength / 2;
-      
-      // Outer glow (colored)
-      const glowGeometry = new CylinderGeometry(0.04, 0.04, segmentLength, 16);
-      const glow = new Mesh(glowGeometry, glowMaterial);
-      glow.position.y = i * segmentLength + segmentLength / 2;
-      
-      // Create segment group
-      const segment = new Group();
-      segment.add(core);
-      segment.add(glow);
-      
-      // Store for physics updates
-      this.bladeSegments.push(segment);
-      this.blade.add(segment);
-    }
-    
-    // Hide blade initially
-    this.blade.visible = false;
-    this.blade.scale.y = 0;
+    // Create blade glow particles
+    this.createGlowEmitter();
   }
 
   startSwingAnimation(): void {
@@ -1455,5 +1249,76 @@ export class Lightsaber extends Group {
     // Calculate perpendicular distance to line
     const projectedPoint = new Vector3().copy(lineStart).add(line.multiplyScalar(projection));
     return new Vector3().subVectors(point, projectedPoint).length();
+  }
+
+  // Create blade light
+  createBladeLight(): void {
+    // Remove old light if it exists
+    if (this.bladeLight) {
+      this.blade.remove(this.bladeLight);
+    }
+    
+    // Create a point light for the blade
+    this.bladeLight = new PointLight(this.bladeColor, this.glowIntensity, 2.0);
+    this.bladeLight.position.y = this.bladeLength / 2;
+    this.blade.add(this.bladeLight);
+    
+    // Make sure light is only visible when lightsaber is active
+    this.bladeLight.visible = this.active;
+  }
+
+  // Animate blade activation/deactivation
+  animateActivation(activate: boolean): void {
+    // Start activation animation
+    this.activationProgress = activate ? 0 : 1;
+    const duration = 0.3; // seconds
+    const startTime = performance.now() / 1000;
+    
+    const animate = () => {
+      const currentTime = performance.now() / 1000;
+      const elapsed = currentTime - startTime;
+      
+      if (activate) {
+        // Extending blade
+        this.activationProgress = Math.min(elapsed / duration, 1);
+      } else {
+        // Retracting blade
+        this.activationProgress = Math.max(1 - (elapsed / duration), 0);
+      }
+      
+      // Scale the blade based on activation progress
+      if (this.blade) {
+        this.blade.scale.y = this.activationProgress;
+        
+        // Update material opacities
+        if (this.bladeMesh && this.bladeMesh.material instanceof MeshBasicMaterial) {
+          this.bladeMesh.material.opacity = this.activationProgress * 0.4;
+        }
+        
+        if (this.bladeCore && this.bladeCore.material instanceof MeshBasicMaterial) {
+          this.bladeCore.material.opacity = this.activationProgress * 0.7;
+        }
+        
+        if (this.plasmaCore && this.plasmaCore.material instanceof MeshBasicMaterial) {
+          this.plasmaCore.material.opacity = this.activationProgress;
+        }
+        
+        // Hide blade when fully retracted
+        if (!activate && this.activationProgress === 0) {
+          this.blade.visible = false;
+          if (this.glowEmitter) {
+            this.glowEmitter.setActive(false);
+          }
+        }
+      }
+      
+      // Continue animation if not complete
+      if (activate && this.activationProgress < 1 || !activate && this.activationProgress > 0) {
+        requestAnimationFrame(animate);
+      }
+    };
+    
+    // Start animation
+    animate();
   }
 }

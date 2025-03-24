@@ -46,6 +46,7 @@ export class Player extends Group {
   // Add missing properties for movement and physics
   private velocity: Vector3 = new Vector3();
   private moveDirection: Vector3 = new Vector3();
+  private groundMeshes: Object3D[] = [];
   private gravity: number = 9.8;
   private jumpForce: number = 5;
   private height: number = 1.8;
@@ -113,48 +114,40 @@ export class Player extends Group {
     
     this.createPlayerModel();
     
-    // Create debug visual for player position
-    if (this.debugMode) {
-      const playerMarker = new Mesh(
-        new SphereGeometry(0.2, 8, 8),
-        new MeshBasicMaterial({ color: 0x00ff00 })
-      );
-      playerMarker.position.y = 1;
-      this.add(playerMarker);
-    }
+    // Create lightsaber immediately
+    this.createLightsaber();
     
-    // Create lightsaber with proper options object
-    this.lightsaber = new Lightsaber({
-      color: '#0066ff', // Brighter blue color
-      bladeLength: 1.2,
-      hiltLength: 0.25,
-      glowIntensity: 2.0 // Increased glow intensity for better pulsation
-    });
-    // Add lightsaber to camera for first-person view
-    this.camera.add(this.lightsaber);
-    
-    // Position lightsaber at bottom right of view
-    this.lightsaber.position.set(0.4, -0.3, -0.5);
-    this.lightsaber.rotation.x = Math.PI * (-0.13);
-    
-    // Add keyboard event listeners
-    this.setupControls();
-    
-    // Activate lightsaber with delay for effect
-    setTimeout(() => {
-      this.lightsaber.activate();
-      // Force update to ensure pulsation starts immediately
-      this.lightsaber.update(0.016);
-    }, 1000);
-    
-    // Track mouse movement for saber control
-    document.addEventListener('mousemove', (event) => {
-      // Calculate normalized device coordinates (-1 to +1)
-      this.mousePosition.x = (event.clientX / window.innerWidth) * 2 - 1;
-      this.mousePosition.y = -(event.clientY / window.innerHeight) * 2 + 1;
-      
-      // Update lightsaber position based on mouse
-      this.updateLightsaberWithMomentum();
+    // Set up key event listeners
+    document.addEventListener('keydown', (event) => {
+      switch (event.code) {
+        case 'KeyW': this.isForwardPressed = true; break;
+        case 'KeyS': this.isBackwardPressed = true; break;
+        case 'KeyA': this.isLeftPressed = true; break;
+        case 'KeyD': this.isRightPressed = true; break;
+        case 'Space': this.isJumpPressed = true; break;
+        case 'ShiftLeft': this.isBlockPressed = true; break;
+        case 'Digit1': 
+          console.log("Lightsaber toggle key pressed");
+          // Toggle lightsaber
+          if (this.lightsaber) {
+            console.log("Lightsaber exists, current state:", this.lightsaber.isActive());
+            if (this.lightsaber.isActive()) {
+              console.log("Deactivating lightsaber");
+              this.lightsaber.deactivate();
+              this.isLightsaberActive = false;
+            } else {
+              console.log("Activating lightsaber");
+              this.lightsaber.activate();
+              this.isLightsaberActive = true;
+              // Play activation sound
+              gameAudio.playSound('lightsaberOn', { volume: 0.7 });
+            }
+            console.log("Lightsaber toggled:", this.lightsaber.isActive());
+          } else {
+            console.log("No lightsaber found");
+          }
+          break;
+      }
     });
 
     // Add event listener to prevent Ctrl+W from closing the page
@@ -173,6 +166,20 @@ export class Player extends Group {
       // Prevent the context menu from appearing on right-click
       event.preventDefault();
       return false;
+    });
+
+    // Set up remaining key events and mouse events
+    this.setupKeyEvents();
+    
+    // Debug info
+    console.log("Player initialized with position:", this.position);
+    
+    // Initialize ground meshes
+    this.groundMeshes = [];
+    scene.traverse(object => {
+      if (object.userData?.isGround || object.name?.includes('ground') || object.name?.includes('floor')) {
+        this.groundMeshes.push(object);
+      }
     });
   }
   
@@ -349,131 +356,56 @@ export class Player extends Group {
     // Skip if dead
     if (this.state === PlayerState.DEAD) return;
     
-    // Always apply gravity regardless of isJumping flag
-    if (!this.isGrounded) {
-      // Apply gravity to jump velocity
-      this.jumpVelocity -= this.gravity * deltaTime;
-      
-      // Update position based on velocity 
-      this.position.y += this.jumpVelocity * deltaTime;
-      
-      // Log jump position for debugging
-      if (this.position.y > 0.01) {
-        console.log(`Jumping: y=${this.position.y.toFixed(2)}, vel=${this.jumpVelocity.toFixed(2)}`);
-      }
-      
-      // Check if we've hit the ground
-      if (this.position.y <= 0) {
-        this.position.y = 0;
-        this.jumpVelocity = 0;
-        this.isGrounded = true;
-        this.isJumping = false;
-        console.log('Player landed on ground');
-      }
-    }
-    
-    // Force position to never go below ground
-    if (this.position.y < 0) {
-      this.position.y = 0;
-      this.isGrounded = true;
-    }
-    
-    // Handle crouching
-    if (this.isCrouching && this.isGrounded) {
-      // Smoothly transition to crouch height
-      this.currentHeight = Math.max(
-        this.crouchHeight,
-        this.currentHeight - 5 * deltaTime
-      );
-      
-      // Reduce movement speed while crouching
-      this.moveSpeed = 2.5;
-    } else {
-      // Smoothly transition back to normal height
-      this.currentHeight = Math.min(
-        this.normalHeight,
-        this.currentHeight + 5 * deltaTime
-      );
-      
-      // Reset movement speed
-      this.moveSpeed = 5;
-    }
-    
-    // Update camera height
-    if (this.camera) {
-      this.camera.position.y = this.currentHeight;
-    }
-    
-    // Update lightsaber position with momentum
-    this.updateLightsaberWithMomentum();
-    
-    // Update lightsaber visuals
-    if (this.lightsaber) {
-      // Only allow attacks when lightsaber is active
-      if (!this.isLightsaberActive && this.isAttackPressed) {
-        this.isAttackPressed = false;
-      }
-      
-      // Update lightsaber
-      this.lightsaber.update(deltaTime);
-      
-      // Handle attack state
-      if (this.isAttackPressed && this.state === PlayerState.ATTACKING) {
-        // Trigger lightsaber swing animation if not already swinging
-        if (!this.lightsaber.isSwinging) {
-          this.lightsaber.playSwingSound();
-          // Add swing animation here
-        }
-      }
-      
-      // Make sure lightsaber state is consistent
-      if (this.isLightsaberActive !== this.lightsaber.isActive()) {
-        if (this.isLightsaberActive) {
-          this.lightsaber.activate();
-        } else {
-          this.lightsaber.deactivate();
-        }
-      }
-    }
-    
-    // Handle movement
-    this.handleMovement(deltaTime);
-    
-    // Check if we should end blocking state when button released
-    if (this.state === PlayerState.BLOCKING && !this.isBlockPressed) {
-      this.state = PlayerState.IDLE;
-    }
-    
-    // If in first-person, update position as normal
-    if (!this.isThirdPerson) {
-      this.position.copy(this.camera.position);
-      this.position.y = 1.7; // Keep player at eye level
-    } else {
-      // In third-person, we need to update camera position based on player movement
+    // Process inputs
+    this.handleInput(deltaTime);
+
+    // Handle jumping and physics
+    this.handleJumping(deltaTime);
+
+    // Handle movement based on input directions
+    if (this.moveDirection.length() > 0) {
+      // Convert input direction from camera space to world space
       const cameraDirection = new Vector3();
       this.camera.getWorldDirection(cameraDirection);
+      cameraDirection.y = 0;
+      cameraDirection.normalize();
+
+      // Get right vector
+      const right = new Vector3(cameraDirection.z, 0, -cameraDirection.x);
+
+      // CRITICAL FIX: Use directly calculated movement vector
+      const moveVector = new Vector3();
+      if (this.isForwardPressed) moveVector.add(cameraDirection.clone().multiplyScalar(-1));
+      if (this.isBackwardPressed) moveVector.add(cameraDirection.clone());
+      if (this.isLeftPressed) moveVector.add(right.clone().multiplyScalar(-1));
+      if (this.isRightPressed) moveVector.add(right.clone());
       
-      // Position camera behind and above player
-      const thirdPersonPosition = this.position.clone()
-        .sub(cameraDirection.normalize().multiplyScalar(3))
-        .add(new Vector3(0, 1.5, 0));
-      
-      this.camera.position.copy(thirdPersonPosition);
-    }
-    
-    // Always update player model rotation to match camera direction
-    if (this.playerModel) {
-      const direction = new Vector3();
-      this.camera.getWorldDirection(direction);
-      direction.y = 0; // Keep rotation only around Y axis
-      
-      if (direction.length() > 0.1) {
-        this.playerModel.lookAt(this.position.clone().add(direction));
+      // Only normalize and apply if we're actually moving
+      if (moveVector.length() > 0) {
+        moveVector.normalize().multiplyScalar(this.moveSpeed * deltaTime);
+        this.position.add(moveVector);
+        console.log(`Player moved to: ${this.position.x.toFixed(2)}, ${this.position.y.toFixed(2)}, ${this.position.z.toFixed(2)}`);
       }
+      
+      this.state = PlayerState.MOVING;
+    } else if (this.state !== PlayerState.ATTACKING && this.state !== PlayerState.BLOCKING) {
+      this.state = PlayerState.IDLE;
     }
-    
-    // Update health bar if it exists
-    this.updateHealthBar();
+
+    // Debug movement
+    if (this.moveDirection.length() > 0) {
+      console.log(`Moving: x=${this.moveDirection.x}, z=${this.moveDirection.z}, position: ${this.position.x.toFixed(2)},${this.position.z.toFixed(2)}`);
+    }
+
+    // Update lightsaber position and physics
+    if (this.lightsaber) {
+      this.lightsaber.update(deltaTime);
+    }
+
+    // Update cooldowns
+    if (this.attackCooldown > 0) {
+      this.attackCooldown -= deltaTime;
+    }
   }
   
   private handleMovement(deltaTime: number): void {
@@ -1101,78 +1033,169 @@ export class Player extends Group {
   }
 
   handleInput(deltaTime: number): void {
-    // Skip if dead
+    // Skip if dead or staggered
+    if (this.state === PlayerState.DEAD || this.state === PlayerState.STAGGERED) return;
+    
+    // Process movement input
+    this.moveDirection.set(0, 0, 0); // Reset move direction
+    
+    // Set movement based on input - THIS FIX ENABLES PLAYER MOVEMENT
+    if (this.isForwardPressed) {
+      console.log("Forward pressed");
+      this.moveDirection.z = -1;
+      this.isMovingForward = true;
+    } else {
+      this.isMovingForward = false;
+    }
+    
+    if (this.isBackwardPressed) {
+      console.log("Backward pressed");
+      this.moveDirection.z = 1;
+      this.isMovingBackward = true;
+    } else {
+      this.isMovingBackward = false;
+    }
+    
+    if (this.isLeftPressed) {
+      console.log("Left pressed");
+      this.moveDirection.x = -1;
+      this.isMovingLeft = true;
+    } else {
+      this.isMovingLeft = false;
+    }
+    
+    if (this.isRightPressed) {
+      console.log("Right pressed");
+      this.moveDirection.x = 1;
+      this.isMovingRight = true;
+    } else {
+      this.isMovingRight = false;
+    }
+  }
+
+  createLightsaber(): void {
+    if (this.lightsaber) {
+      console.log("Lightsaber already exists, skipping creation");
+      return; // Lightsaber already exists
+    }
+    
+    console.log("Creating lightsaber");
+    
+    // Create lightsaber
+    this.lightsaber = new Lightsaber({
+      color: '#3366ff', // Blue lightsaber
+      bladeLength: 1.2,
+      hiltLength: 0.3,
+      glowIntensity: 1.2,
+      scene: this.scene
+    });
+    
+    // Position lightsaber
+    this.lightsaber.position.copy(this.lightsaberOffset);
+    
+    // Ensure lightsaber is aligned properly
+    this.lightsaber.rotation.set(0, 0, 0);
+    
+    // Add to player
+    this.add(this.lightsaber);
+    
+    console.log("Lightsaber created and added to player at position:", this.lightsaber.position);
+  }
+
+  // Implement key release event listener that was missing
+  setupKeyEvents(): void {
+    // Set up key release events
+    document.addEventListener('keyup', (event) => {
+      switch (event.code) {
+        case 'KeyW': this.isForwardPressed = false; break;
+        case 'KeyS': this.isBackwardPressed = false; break;
+        case 'KeyA': this.isLeftPressed = false; break;
+        case 'KeyD': this.isRightPressed = false; break;
+        case 'Space': this.isJumpPressed = false; break;
+        case 'ShiftLeft': this.isBlockPressed = false; break;
+      }
+    });
+
+    // Mouse events for attacks
+    document.addEventListener('mousedown', (event) => {
+      // Skip if clicked on UI
+      if (this.clickedOnUI) {
+        console.log("Clicked on UI element, skipping attack");
+        this.clickedOnUI = false;
+        return;
+      }
+
+      // Prevent attacking if already attacking
+      if (this.state === PlayerState.ATTACKING) {
+        console.log("Already attacking, ignoring input");
+        return;
+      }
+
+      console.log("Mouse down - not on UI");
+      
+      if (event.button === 0) { // Left click
+        console.log("Left click - attack triggered");
+        this.isAttackPressed = true;
+      } else if (event.button === 2) { // Right click
+        console.log("Right click - heavy attack triggered");
+        this.isHeavyAttackPressed = true;
+      }
+    });
+
+    // Add mouseup handler to reset attack flags
+    document.addEventListener('mouseup', (event) => {
+      if (event.button === 0) { // Left click
+        this.isAttackPressed = false;
+      } else if (event.button === 2) { // Right click
+        this.isHeavyAttackPressed = false;
+      }
+    });
+  }
+
+  // Update the player's position handling
+  private updateMovement(deltaTime: number): void {
     if (this.state === PlayerState.DEAD) return;
-    
-    // Handle movement input
-    this.moveDirection.x = 0;
-    this.moveDirection.z = 0;
-    
-    if (this.isForwardPressed) this.moveDirection.z = -1;
-    if (this.isBackwardPressed) this.moveDirection.z = 1;
-    if (this.isLeftPressed) this.moveDirection.x = -1;
-    if (this.isRightPressed) this.moveDirection.x = 1;
-    
-    // Normalize movement vector to prevent faster diagonal movement
-    if (this.moveDirection.length() > 0) {
-      this.moveDirection.normalize();
+
+    const moveSpeed = this.isCrouching ? this.moveSpeed * 0.6 : this.moveSpeed;
+    const velocity = new Vector3();
+    const rotation = this.rotation.clone();
+
+    // Ground check
+    const groundCheck = new Raycaster(
+      this.position.clone().add(new Vector3(0, 0.5, 0)),
+      new Vector3(0, -1, 0),
+      0,
+      1.0
+    );
+    const onGround = groundCheck.intersectObjects(this.groundMeshes).length > 0;
+
+    // Apply gravity
+    if (!onGround) {
+      this.velocity.y -= 9.8 * deltaTime;
+    } else {
+      this.velocity.y = 0;
+      this.position.y = 0; // Snap to ground level
     }
-    
-    // Handle attack input
-    if (this.isAttackPressed && this.lightsaber) {
-      // Determine swing direction based on movement
-      let swingDirection: 'horizontal' | 'vertical' | 'diagonal' = 'horizontal';
-      
-      if (Math.abs(this.moveDirection.x) > 0.7) {
-        swingDirection = 'horizontal';
-      } else if (this.moveDirection.z > 0.7) {
-        swingDirection = 'vertical';
-      } else if (Math.abs(this.moveDirection.x) > 0.3 && Math.abs(this.moveDirection.z) > 0.3) {
-        swingDirection = 'diagonal';
-      }
-      
-      // Perform light attack
-      this.lightsaber.lightAttack(swingDirection);
-      this.state = PlayerState.ATTACKING;
-      this.isAttackPressed = false; // Reset to prevent continuous attacks
+
+    // Movement during combat
+    if (this.state === PlayerState.ATTACKING) {
+      // Allow limited movement during attacks
+      const attackMoveSpeed = moveSpeed * 0.3;
+      if (this.isMovingForward) velocity.z -= attackMoveSpeed;
+      if (this.isMovingBackward) velocity.z += attackMoveSpeed;
+      if (this.isMovingLeft) velocity.x -= attackMoveSpeed;
+      if (this.isMovingRight) velocity.x += attackMoveSpeed;
+    } else {
+      // Normal movement
+      if (this.isMovingForward) velocity.z -= moveSpeed;
+      if (this.isMovingBackward) velocity.z += moveSpeed;
+      if (this.isMovingLeft) velocity.x -= moveSpeed;
+      if (this.isMovingRight) velocity.x += moveSpeed;
     }
-    
-    // Handle heavy attack input
-    if (this.isHeavyAttackPressed && this.lightsaber) {
-      // Determine swing direction based on movement
-      let swingDirection: 'horizontal' | 'vertical' | 'diagonal' = 'horizontal';
-      
-      if (Math.abs(this.moveDirection.x) > 0.7) {
-        swingDirection = 'horizontal';
-      } else if (this.moveDirection.z > 0.7) {
-        swingDirection = 'vertical';
-      } else if (Math.abs(this.moveDirection.x) > 0.3 && Math.abs(this.moveDirection.z) > 0.3) {
-        swingDirection = 'diagonal';
-      }
-      
-      // Perform heavy attack
-      this.lightsaber.heavyAttack(swingDirection);
-      this.state = PlayerState.ATTACKING;
-      this.isHeavyAttackPressed = false; // Reset to prevent continuous attacks
-    }
-    
-    // Handle block input
-    if (this.isBlockPressed && this.lightsaber) {
-      this.lightsaber.setBlocking(true);
-      this.state = PlayerState.BLOCKING;
-    } else if (this.state === PlayerState.BLOCKING && this.lightsaber) {
-      this.lightsaber.setBlocking(false);
-      this.state = PlayerState.IDLE;
-    }
-    
-    // Handle jump input
-    if (this.isJumpPressed && this.isGrounded && !this.isJumping) {
-      this.velocity.y = this.jumpForce;
-      this.isJumping = true;
-      this.isGrounded = false;
-      
-      // Play jump sound
-      gameAudio.playSound('jump', { volume: 0.5 });
-    }
+
+    // Apply movement
+    velocity.applyEuler(rotation);
+    this.position.add(velocity.multiplyScalar(deltaTime));
+    this.position.add(this.velocity.clone().multiplyScalar(deltaTime));
   }
 }

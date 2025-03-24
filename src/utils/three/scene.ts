@@ -294,6 +294,23 @@ export class GameScene {
     this.controls.addEventListener('unlock', () => {
       console.log('Controls unlocked');
     });
+
+    // Player events
+    (this.player as any).addEventListener('healthChanged', (e: any) => {
+      const event = new CustomEvent('playerHealthChanged', {
+        detail: { health: e.health, maxHealth: e.maxHealth }
+      });
+      window.dispatchEvent(event);
+    });
+
+    // Enemy events
+    window.addEventListener('enemyHealthChanged', (e: any) => {
+      this.updateEnemyHealthBar(e.detail.health, e.detail.maxHealth);
+    });
+
+    window.addEventListener('enemyRespawned', (e: any) => {
+      e.detail.enemy.resetPosition();
+    });
   }
   
   private onWindowResize(): void {
@@ -745,5 +762,49 @@ export class GameScene {
     
     // Additional player setup if needed
     console.log("Player positioned at:", this.player.position);
+  }
+
+  // Add a method to update enemy health UI
+  private updateEnemyHealthBar(health: number, maxHealth: number): void {
+    // Find or create enemy health bar element
+    let healthBar = document.getElementById('enemy-health-bar');
+    if (!healthBar) {
+      healthBar = document.createElement('div');
+      healthBar.id = 'enemy-health-bar';
+      healthBar.style.position = 'absolute';
+      healthBar.style.top = '70px';
+      healthBar.style.left = '50%';
+      healthBar.style.transform = 'translateX(-50%)';
+      healthBar.style.width = '200px';
+      healthBar.style.height = '10px';
+      healthBar.style.background = '#333';
+      healthBar.style.border = '1px solid #666';
+      
+      const fill = document.createElement('div');
+      fill.id = 'enemy-health-fill';
+      fill.style.height = '100%';
+      fill.style.width = '100%';
+      fill.style.backgroundColor = '#ff3333';
+      fill.style.transition = 'width 0.3s';
+      
+      healthBar.appendChild(fill);
+      this.container.appendChild(healthBar);
+    }
+    
+    // Update health bar fill width
+    const fillElement = document.getElementById('enemy-health-fill');
+    if (fillElement) {
+      const healthPercent = Math.max(0, Math.min(100, (health / maxHealth) * 100));
+      fillElement.style.width = `${healthPercent}%`;
+      
+      // Change color based on health level
+      if (healthPercent > 60) {
+        fillElement.style.backgroundColor = '#ff3333'; // Full red for enemy
+      } else if (healthPercent > 30) {
+        fillElement.style.backgroundColor = '#ff6633'; // Orange-red
+      } else {
+        fillElement.style.backgroundColor = '#ff9933'; // Yellow-orange
+      }
+    }
   }
 }

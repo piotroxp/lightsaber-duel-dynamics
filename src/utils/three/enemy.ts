@@ -45,6 +45,7 @@ export class Enemy extends Group {
   private speed: number;
   private attackRange: number;
   private attackDamage: number;
+  private velocity: Vector3 = new Vector3();
   
   // Combat
   private lightsaber: Lightsaber;
@@ -127,7 +128,7 @@ export class Enemy extends Group {
   }
   
   update(deltaTime: number, playerPosition: Vector3, playerDirection: Vector3): void {
-    // Skip update if dead
+    // Skip if dead
     if (this.state === EnemyState.DEAD) {
       // Handle respawn logic
       if (!this.isRespawning) {
@@ -619,46 +620,31 @@ export class Enemy extends Group {
 
   // Modify respawn to reset damage marks
   respawn(): void {
-    console.log("Respawning enemy");
-    this.isRespawning = false;
     this.health = this.maxHealth;
-    
-    // Reset position to ground level
-    this.position.set(
-      Math.random() * 10 - 5,
-      0, // Fixed Y position at ground level
-      Math.random() * 10 - 5
-    );
-    
-    // Reset state
     this.state = EnemyState.IDLE;
-    this.attacking = false;
-    this.blocking = false;
+    this.position.set(0, 0, -5); // Fixed spawn position
+    this.rotation.set(0, Math.PI, 0);
+    this.clearDamageVisuals();
     
-    // Record respawn time
-    this.lastRespawnTime = performance.now() / 1000;
+    // Dispatch proper event
+    const event = new CustomEvent('enemyRespawned', {
+      detail: { enemy: this }
+    });
+    window.dispatchEvent(event);
+  }
+
+  // Add missing resetPosition method that's called from event handler
+  resetPosition(): void {
+    // Reset to default position and orientation
+    this.position.set(0, 0, -5);
+    this.rotation.set(0, Math.PI, 0);
     
-    // Ensure lightsaber is active and red
-    if (this.lightsaber) {
-      this.lightsaber.activate();
-      this.lightsaber.setColor('#ff0000'); // Force red color on respawn
+    // Reset physics properties if needed
+    if (this.velocity) {
+      this.velocity.set(0, 0, 0);
     }
     
-    // Update the health bar UI
-    const healthBar = document.getElementById('enemy-health-bar');
-    if (healthBar) {
-      healthBar.style.width = '100%';
-      healthBar.style.backgroundColor = '#00ff00'; // Reset to green
-    }
-    
-    // Clear damage marks
-    for (const mark of this.damageMarks) {
-      this.remove(mark);
-    }
-    this.damageMarks = [];
-    
-    // Dispatch event
-    this.dispatchEvent({ type: 'respawned' as any });
+    console.log("Enemy position reset to:", this.position);
   }
 
   // Add a method to create visible damage marks
@@ -691,6 +677,25 @@ export class Enemy extends Group {
     
     this.add(damageMark);
     this.damageMarks.push(damageMark);
+  }
+
+  // Clear all damage visuals when respawning
+  clearDamageVisuals(): void {
+    // Remove each damage mark mesh
+    for (const mark of this.damageMarks) {
+      this.remove(mark);
+      if (mark.material) {
+        if (Array.isArray(mark.material)) {
+          mark.material.forEach(m => m.dispose());
+        } else {
+          mark.material.dispose();
+        }
+      }
+      if (mark.geometry) mark.geometry.dispose();
+    }
+    
+    // Clear the array
+    this.damageMarks = [];
   }
 
   getLastRespawnTime(): number {
