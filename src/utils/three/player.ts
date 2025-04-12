@@ -1347,6 +1347,41 @@ export class Player extends Group {
     return slashType;
   }
 
+  // Final vertical slash adjustment - natural ending position
+  private handleVerticalSlash(attackProgress: number, progressRadians: number, basePosition: Vector3): void {
+    // Position the saber - same base position as before
+    this.lightsaber.position.copy(basePosition);
+    
+    // ADJUSTED: Y movement now goes from LOW to LOWER (natural ending position)
+    // Start at typical starting position (-0.3)
+    // End at a natural low position (-1.1) where the saber would naturally end at pelvis height
+    const yStart = -0.3;  // Start position (unchanged)
+    const yEnd = -1.1;    // End much lower, at pelvis height
+    const yPos = yStart + ((yEnd - yStart) * attackProgress);
+    this.lightsaber.position.y = yPos;
+    
+    // Keep the same Z movement pattern as it's working well
+    const zBase = -0.5;
+    const zThrust = -0.3;
+    const reverseProgress = 1 - attackProgress;
+    const reverseRadians = reverseProgress * Math.PI;
+    this.lightsaber.position.z = basePosition.z + zBase - (Math.sin(reverseRadians) * zThrust);
+    
+    // X position: slight sway remains the same
+    const xOffset = 0.05;
+    this.lightsaber.position.x = Math.sin(progressRadians * 0.5) * xOffset;
+    
+    // ADJUSTED ROTATION: Account for the lower end position
+    // Start with blade angled at a natural striking position
+    // End with the blade angled slightly toward the ground
+    const rotXStart = Math.PI/4;      // Start angle (unchanged)
+    const rotXEnd = Math.PI/8;        // End with slight downward angle
+    const rotX = rotXStart + ((rotXEnd - rotXStart) * attackProgress);
+    
+    // Apply the rotation
+    this.lightsaber.rotation.set(rotX, 0, 0);
+  }
+
   // Handle diagonal slash animations
   private handleDiagonalSlash(slashType: string, attackProgress: number, progressRadians: number, basePosition: Vector3): void {
     // Position slash correctly
@@ -1374,46 +1409,6 @@ export class Player extends Group {
     this.lightsaber.rotation.set(rotX, rotY, rotZ);
   }
 
-  // MIRRORED vertical slash - completely reversed direction
-  private handleVerticalSlash(attackProgress: number, progressRadians: number, basePosition: Vector3): void {
-    // Position the saber - same base position as diagonals
-    this.lightsaber.position.copy(basePosition);
-    
-    // REVERSED: Y movement now goes from LOW to HIGH (opposite of current)
-    // Original: yPos goes from 0.5 to -0.3 as attackProgress increases
-    // New: yPos goes from -0.3 to 0.5 as attackProgress increases
-    const yStart = -0.3; // Start LOW (where it used to end)
-    const yEnd = 0.5;    // End HIGH (where it used to start)
-    const yPos = yStart + ((yEnd - yStart) * attackProgress);
-    this.lightsaber.position.y = yPos;
-    
-    // REVERSED: Z movement with thrust (completely mirror the current behavior)
-    // We need to REVERSE the sin wave pattern for Z thrust as well
-    const zBase = -0.5;
-    const zThrust = -0.3;
-    
-    // CRITICAL FIX: Reverse the Z formula by using (1-attackProgress) in the sin function
-    const reverseProgress = 1 - attackProgress; // Complete reversal
-    const reverseRadians = reverseProgress * Math.PI;
-    
-    // Apply the REVERSED motion
-    this.lightsaber.position.z = basePosition.z + zBase - (Math.sin(reverseRadians) * zThrust);
-    
-    // X position: keep the same slight sway
-    const xOffset = 0.05;
-    this.lightsaber.position.x = Math.sin(progressRadians * 0.5) * xOffset;
-    
-    // REVERSED ROTATION: Start with blade down, end with blade up (opposite of current)
-    // Original rotX goes from -PI/5 to PI/4
-    // New rotX goes from PI/4 to -PI/5
-    const rotXStart = Math.PI/4;     // Start DOWN (where it used to end)
-    const rotXEnd = -Math.PI/5;      // End UP (where it used to start)
-    const rotX = rotXStart + ((rotXEnd - rotXStart) * attackProgress);
-    
-    // Apply the reversed rotation
-    this.lightsaber.rotation.set(rotX, 0, 0);
-  }
-
   // Handle horizontal slash animations
   private handleHorizontalSlash(slashType: string, attackProgress: number, progressRadians: number, basePosition: Vector3): void {
     // Similar pattern to other slashes
@@ -1426,9 +1421,9 @@ export class Player extends Group {
     const startPos = this.lightsaber.position.clone();
     const startRot = this.lightsaber.rotation.clone();
     
-    // Target position and rotation (default stance)
-    const targetPos = new Vector3(0, -0.8, -0.7);
-    const targetRot = new Euler(Math.PI / 20, 0, 0);
+    // REBALANCED target position to match reset position
+    const targetPos = new Vector3(0, -1.0, -0.65);
+    const targetRot = new Euler(Math.PI / 12, 0, 0);
     
     // Customize animation based on slash type
     let duration = 300; // Default duration
@@ -1535,20 +1530,17 @@ export class Player extends Group {
   private updateIdleSaberMovement(deltaTime: number): void {
     if (!this.lightsaber || !this.camera) return;
 
-    // IMPORTANT: Make the lightsaber a child of the camera
-    // This ensures it follows the camera perfectly
+    // Make the lightsaber a child of the camera
     if (this.lightsaber.parent !== this.camera) {
       this.camera.add(this.lightsaber);
-      console.log("Attached lightsaber to camera");
     }
 
-    // Define fixed local position and rotation relative to camera
-    // These are in camera's local space, not world space
-    const targetPosition = new Vector3(0, -0.3, -0.7);
-    const targetRotation = new Euler(Math.PI / 20, 0, 0);
+    // REBALANCED fixed position to match reset position
+    const targetPosition = new Vector3(0, -1.0, -0.65);
+    const targetRotation = new Euler(Math.PI / 12, 0, 0);
     const targetQuaternion = new Quaternion().setFromEuler(targetRotation);
 
-    // Use simple lerp in local space (much more reliable)
+    // Use simple lerp in local space
     this.lightsaber.position.lerp(targetPosition, 0.15);
     this.lightsaber.quaternion.slerp(targetQuaternion, 0.15);
   }
@@ -1758,8 +1750,13 @@ export class Player extends Group {
   private resetLightsaberPosition(): void {
     if (!this.lightsaber) return;
     
-    // Position the lightsaber lower so hilt bottom aligns with viewport bottom
-    this.lightsaber.position.set(0, -0.8, -0.7);
-    this.lightsaber.rotation.set(Math.PI / 20, 0, 0);
+    // REBALANCED POSITION:
+    // Y: -1.0 (raised slightly from -1.2 to be more visible)
+    // Z: -0.65 (moved further from -0.5 to show more of the blade)
+    // This keeps the saber firmly in view while ensuring blade reaches out
+    this.lightsaber.position.set(0, -1.0, -0.65);
+    
+    // Slight upward angle for natural holding position
+    this.lightsaber.rotation.set(Math.PI / 12, 0, 0);
   }
 }
