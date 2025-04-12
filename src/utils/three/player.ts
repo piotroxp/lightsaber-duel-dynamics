@@ -124,6 +124,22 @@ export class Player extends Group {
   // Add input initialization flag
   private inputInitialized: boolean = false;
   
+  // Add these properties to the Player class
+  public score: number = 0;
+  private isBlocking: boolean = false;
+  
+  // Add these to Player class properties
+  private currentStance: number = 1; // Default to Form I
+  private stances = [
+    { id: 1, name: "Form I: Shii-Cho", description: "Balanced, fundamental form" },
+    { id: 2, name: "Form II: Makashi", description: "Precision dueling form" },
+    { id: 3, name: "Form III: Soresu", description: "Ultimate defensive form" },
+    { id: 4, name: "Form IV: Ataru", description: "Acrobatic, aggressive form" },
+    { id: 5, name: "Form V: Djem So", description: "Power counterattacks" },
+    { id: 6, name: "Form VI: Niman", description: "Balanced form with Force techniques" },
+    { id: 7, name: "Form VII: Juyo", description: "Ferocious, unpredictable form" }
+  ];
+  
   constructor(scene: Scene, camera: Camera) {
     super();
     
@@ -233,12 +249,20 @@ export class Player extends Group {
     
     // Mouse events for attacks
     document.addEventListener('mousedown', (event) => {
-      if (this.clickedOnUI) return;
-      
-      if (event.button === 0) { // Left click
+      // Skip if clicked on UI
+      if (this.clickedOnUI) {
+        console.log("Clicked on UI element, skipping action");
+        this.clickedOnUI = false;
+        return;
+      }
+
+      if (event.button === 0) { // Left click - Attack
+        console.log("Left click - attack triggered");
         this.isAttackPressed = true;
-      } else if (event.button === 2) { // Right click
+      } else if (event.button === 2) { // Right click - Block
+        console.log("Right click - block triggered");
         this.isBlockPressed = true;
+        this.state = PlayerState.BLOCKING;
       }
     });
     
@@ -247,6 +271,9 @@ export class Player extends Group {
         this.isAttackPressed = false;
       } else if (event.button === 2) { // Right click
         this.isBlockPressed = false;
+        if (this.state === PlayerState.BLOCKING) {
+          this.state = PlayerState.IDLE;
+        }
       }
     });
     
@@ -289,6 +316,7 @@ export class Player extends Group {
     
     // Update combat state
     this.updateAttack(deltaTime);
+    this.updateBlocking(deltaTime);
     
     // Handle lightsaber
     if (this.lightsaber) {
@@ -1146,13 +1174,14 @@ export class Player extends Group {
     if (this.state !== PlayerState.BLOCKING) {
       console.log("Player blocking");
       this.state = PlayerState.BLOCKING;
+      this.isBlocking = true; // Set the property to true
       // Optional: Play block start sound
       // Optional: Move lightsaber to a blocking pose visually
       if (this.lightsaber) {
          // Example: Move saber to a defensive position
          // You might want a more sophisticated animation
-         this.lightsaber.position.set(0, -0.1, -0.6); 
-         this.lightsaber.rotation.set(Math.PI / 2.5, 0, 0); 
+         this.lightsaber.position.set(0, -0.15, -0.6); 
+         this.lightsaber.rotation.set(Math.PI / 2, Math.PI / 2, 0); 
       }
     }
   }
@@ -1162,6 +1191,7 @@ export class Player extends Group {
      if (this.state === PlayerState.BLOCKING) {
        console.log("Player stopped blocking");
        this.state = PlayerState.IDLE;
+       this.isBlocking = false; // Set the property to false
        // Return lightsaber to normal position
        if (this.lightsaber) {
           this.lightsaber.position.set(0.35, -0.3, -0.7); 
@@ -1366,5 +1396,165 @@ export class Player extends Group {
         camera.position.x = 0;
       }
     }
+  }
+
+  // Add methods to handle blocking
+  private updateBlocking(deltaTime: number): void {
+    if (this.isBlockPressed && this.state !== PlayerState.ATTACKING) {
+      // Enter blocking state
+      this.state = PlayerState.BLOCKING;
+      this.isBlocking = true;
+      
+      // Position lightsaber in blocking stance based on current form
+      if (this.lightsaber) {
+        // Base position for all stances - slightly forward
+        const basePosition = new Vector3(0, -0.15, -0.6);
+        
+        // Choose blocking angle based on stance
+        let rotationX, rotationY, rotationZ;
+        
+        switch(this.currentStance) {
+          case 3: // Soresu - horizontal barrier
+            // Position centered and forward
+            this.lightsaber.position.copy(basePosition);
+            // IMPORTANT: This rotation places the blade ACROSS the screen
+            rotationX = Math.PI / 2;  // 90 degrees on X axis
+            rotationY = Math.PI / 2;  // 90 degrees on Y axis
+            rotationZ = 0;
+            break;
+            
+          case 2: // Makashi - angled, elegant
+            this.lightsaber.position.copy(basePosition).add(new Vector3(0.1, 0, 0));
+            rotationX = Math.PI / 3;
+            rotationY = Math.PI / 3;
+            rotationZ = Math.PI / 6;
+            break;
+            
+          case 5: // Djem So - powerful, ready to counter
+            this.lightsaber.position.copy(basePosition).add(new Vector3(-0.1, 0.1, 0));
+            rotationX = Math.PI / 2.5;
+            rotationY = Math.PI / 2.2;
+            rotationZ = -Math.PI / 12;
+            break;
+            
+          default: // All other forms use standard horizontal block
+            this.lightsaber.position.copy(basePosition);
+            rotationX = Math.PI / 2;  // 90 degrees on X axis
+            rotationY = Math.PI / 2;  // 90 degrees on Y axis
+            rotationZ = 0;
+        }
+        
+        // Apply the rotation to place blade horizontally across view
+        const blockRotation = new Euler(rotationX, rotationY, rotationZ);
+        this.lightsaber.quaternion.slerp(
+          new Quaternion().setFromEuler(blockRotation),
+          0.3  // Adjust speed of transition
+        );
+      }
+    }
+    else if (!this.isBlockPressed && this.state === PlayerState.BLOCKING) {
+      // Exit blocking state
+      this.state = PlayerState.IDLE;
+      this.isBlocking = false;
+    }
+  }
+
+  // Method to handle a successful block
+  public handleSuccessfulBlock(): void {
+    // Visual feedback
+    if (this.lightsaber) {
+      createHitEffect(this.scene, this.lightsaber.getBladePosition(), 0.3, 0xFFFFFF);
+    }
+    
+    // Audio feedback
+    gameAudio.playSound('saberClash', 0.7);
+    
+    // Optional: Camera shake effect
+    this.applyCameraShake(0.5);
+  }
+
+  // Add a method to increment score
+  public incrementScore(points: number = 1): void {
+    this.score += points;
+    console.log(`Player score increased to ${this.score}`);
+    
+    // Dispatch event for UI to update
+    this.dispatchEvent({ 
+      type: 'scoreChanged', 
+      detail: { score: this.score } 
+    });
+  }
+
+  // Add a getter method that the combat system can call to check if blocking
+  public isPlayerBlocking(): boolean {
+    return this.isBlocking;
+  }
+
+  // Add to the end of the constructor
+  setupStanceSystem() {
+    // Initialize with Form I
+    this.setStance(1);
+    
+    // Add keyboard shortcuts for stance switching (optional)
+    document.addEventListener('keydown', (event) => {
+      // Number keys 1-7 to switch stances
+      if (event.key >= '1' && event.key <= '7') {
+        const stanceNumber = parseInt(event.key);
+        this.setStance(stanceNumber);
+      }
+    });
+  }
+
+  // Method to change stance
+  public setStance(stanceId: number): void {
+    if (stanceId < 1 || stanceId > 7) return;
+    
+    this.currentStance = stanceId;
+    console.log(`Switched to ${this.stances[stanceId-1].name}`);
+    
+    // Apply stance-specific properties
+    switch(stanceId) {
+      case 1: // Shii-Cho
+        this.attackSpeed = 1.0;
+        this.attackDamage = 8;
+        this.blockEffectiveness = 0.7;
+        break;
+      case 2: // Makashi
+        this.attackSpeed = 1.2;
+        this.attackDamage = 7;
+        this.blockEffectiveness = 0.6;
+        break;
+      case 3: // Soresu
+        this.attackSpeed = 0.8;
+        this.attackDamage = 6;
+        this.blockEffectiveness = 0.9;
+        break;
+      case 4: // Ataru
+        this.attackSpeed = 1.3;
+        this.attackDamage = 9;
+        this.blockEffectiveness = 0.5;
+        break;
+      case 5: // Djem So
+        this.attackSpeed = 0.9;
+        this.attackDamage = 10;
+        this.blockEffectiveness = 0.8;
+        break;
+      case 6: // Niman
+        this.attackSpeed = 1.0;
+        this.attackDamage = 8;
+        this.blockEffectiveness = 0.7;
+        break;
+      case 7: // Juyo
+        this.attackSpeed = 1.4;
+        this.attackDamage = 12;
+        this.blockEffectiveness = 0.4;
+        break;
+    }
+    
+    // Dispatch event for UI to update
+    this.dispatchEvent({ 
+      type: 'stanceChanged', 
+      detail: { stance: this.stances[stanceId-1] } 
+    });
   }
 }

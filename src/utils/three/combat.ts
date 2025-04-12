@@ -111,7 +111,7 @@ export class CombatSystem {
         const enemyHitRange = 1.8; // Adjust as needed
         if (distanceToEnemySaber < enemyHitRange && !enemy.hasAppliedDamageInCurrentAttack()) { // Add hasAppliedDamage flag to Enemy
           // Check if player is blocking
-          if (this.player.isBlocking()) {
+          if (this.player.isPlayerBlocking()) {
        console.log("🛡️ PLAYER BLOCKED ENEMY ATTACK!");
             // Trigger clash effect at block point
             const blockPoint = this.player.getLightsaberPosition(); // Approx block point

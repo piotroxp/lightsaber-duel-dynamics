@@ -4,6 +4,7 @@ import LoadingScreen from './LoadingScreen';
 import { GameScene } from '@/utils/three/scene';
 import gameAudio from '@/utils/three/audio';
 import { toast } from 'sonner';
+import StanceSelector from './StanceSelector';
 
 interface GameState {
   isLoading: boolean;
@@ -221,6 +222,79 @@ const Game: React.FC = () => {
     }
   }, [gameState.isStarted]);
   
+  // Add this component for the scoreboard
+  const Scoreboard = ({ playerScore, enemyScore }) => {
+    return (
+      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-6 py-2 rounded-lg flex items-center gap-8 font-mono text-xl">
+        <div className="flex flex-col items-center">
+          <span className="text-blue-400">PLAYER</span>
+          <span className="text-2xl font-bold">{playerScore}</span>
+        </div>
+        <div className="text-gray-400 text-2xl">VS</div>
+        <div className="flex flex-col items-center">
+          <span className="text-red-400">ENEMY</span>
+          <span className="text-2xl font-bold">{enemyScore}</span>
+        </div>
+      </div>
+    );
+  };
+
+  // Add state for scores in your Game component
+  const [playerScore, setPlayerScore] = useState(0);
+  const [enemyScore, setEnemyScore] = useState(0);
+
+  // Add event listeners for score changes
+  useEffect(() => {
+    const handlePlayerScoreChange = (event) => {
+      setPlayerScore(event.detail.score);
+    };
+    
+    const handleEnemyScoreChange = (event) => {
+      setEnemyScore(event.detail.score);
+    };
+    
+    document.addEventListener('playerScoreChanged', handlePlayerScoreChange);
+    document.addEventListener('enemyScoreChanged', handleEnemyScoreChange);
+    
+    return () => {
+      document.removeEventListener('playerScoreChanged', handlePlayerScoreChange);
+      document.removeEventListener('enemyScoreChanged', handleEnemyScoreChange);
+    };
+  }, []);
+
+  // Add state for stance
+  const [currentStance, setCurrentStance] = useState(1);
+  const [stances, setStances] = useState([
+    { id: 1, name: "Form I: Shii-Cho", description: "Balanced, fundamental form" },
+    { id: 2, name: "Form II: Makashi", description: "Precision dueling form" },
+    { id: 3, name: "Form III: Soresu", description: "Ultimate defensive form" },
+    { id: 4, name: "Form IV: Ataru", description: "Acrobatic, aggressive form" },
+    { id: 5, name: "Form V: Djem So", description: "Power counterattacks" },
+    { id: 6, name: "Form VI: Niman", description: "Balanced form with Force techniques" },
+    { id: 7, name: "Form VII: Juyo", description: "Ferocious, unpredictable form" }
+  ]);
+
+  // Add listener for stance changes from player
+  useEffect(() => {
+    const handleStanceChange = (event) => {
+      setCurrentStance(event.detail.stance.id);
+    };
+    
+    document.addEventListener('stanceChanged', handleStanceChange);
+    
+    return () => {
+      document.removeEventListener('stanceChanged', handleStanceChange);
+    };
+  }, []);
+
+  // Add handler for stance selection from UI
+  const handleSelectStance = (stanceId) => {
+    // Call method on player object in the game scene
+    if (gameSceneRef.current?.scene?.player) {
+      gameSceneRef.current.scene.player.setStance(stanceId);
+    }
+  };
+
   return (
     <div className="relative w-full h-full">
       {gameState.hasError && (
@@ -373,6 +447,18 @@ const Game: React.FC = () => {
             </button>
           </div>
         </motion.div>
+      )}
+      
+      {/* Scoreboard */}
+      {gameState.isStarted && <Scoreboard playerScore={playerScore} enemyScore={enemyScore} />}
+      
+      {/* Stance Selector */}
+      {gameState.isStarted && !gameState.victory && !gameState.gameOver && (
+        <StanceSelector 
+          stances={stances}
+          currentStance={currentStance}
+          onSelectStance={handleSelectStance}
+        />
       )}
     </div>
   );
