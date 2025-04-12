@@ -273,7 +273,12 @@ export class Player extends Group {
         "Grounded:", this.isGrounded);
     }
     
-    // Skip if dead
+    // Check if player is dead and trigger respawn
+    if (this.health <= 0 && this.state !== PlayerState.DEAD) {
+      this.die();
+    }
+    
+    // Skip further updates if player is dead
     if (this.state === PlayerState.DEAD) return;
     
     // Process movement input and update vectors
@@ -281,17 +286,6 @@ export class Player extends Group {
     
     // Apply physics
     this.checkGroundCollision();
-    
-    // Check if player is dead
-    if (this.health <= 0 && this.state !== PlayerState.DEAD) {
-      this.state = PlayerState.DEAD;
-      this.dispatchEvent({ type: 'died' });
-      
-      // Respawn after a delay
-      setTimeout(() => {
-        this.respawn();
-      }, 2000); // 2 second delay before respawn
-    }
     
     // Update combat state
     this.updateAttack(deltaTime);
@@ -974,73 +968,75 @@ export class Player extends Group {
   }
   
   /**
+   * Handle player death
+   */
+  private die(): void {
+    console.log("Player died");
+    this.state = PlayerState.DEAD;
+    this.velocity.set(0, 0, 0); // Stop all movement
+    
+    // Dispatch died event
+    this.dispatchEvent({ type: 'died' });
+    
+    // Schedule respawn after delay
+    setTimeout(() => this.respawn(), 2000);
+  }
+
+  /**
    * Respawn the player after death
    */
   public respawn(): void {
-    // Only respawn if player is dead or enough time has passed
-    const currentTime = performance.now();
-    if (this.state !== PlayerState.DEAD && 
-        (currentTime - this.lastRespawnTime) < 5000) {
-      return; // Prevent rapid respawns
-    }
+    // Force reset player state
+    this.state = PlayerState.IDLE;
     
     console.log("Respawning player...");
     
-    // Reset player position to a safe spawn point
+    // Reset position and physics
     this.position.set(0, 0, 0);
     this.velocity.set(0, 0, 0);
     
     // Reset health
     this.health = this.maxHealth;
     
-    // Reset state
-    this.state = PlayerState.IDLE;
-    
-    // Reset flags
-    this.isGrounded = true;
-    this.isJumping = false;
-    this.isSwinging = false;
+    // Reset all input flags to prevent stuck movement
+    this.isForwardPressed = false;
+    this.isBackwardPressed = false;
+    this.isLeftPressed = false;
+    this.isRightPressed = false;
+    this.isJumpPressed = false;
+    this.isBlockPressed = false;
     this.isAttackPressed = false;
     this.isHeavyAttackPressed = false;
-    this.isBlockPressed = false;
+    this.isSwinging = false;
+    
+    // Reset physics flags
+    this.isGrounded = true;
+    this.isJumping = false;
     
     // Reset camera position
     if (this.camera) {
-      this.camera.position.y = 1.8;
-      this.camera.position.x = 0;
-      this.camera.position.z = 0;
+      this.camera.position.set(0, 1.8, 0);
     }
     
     // Reset lightsaber
     if (this.lightsaber) {
-      this.lightsaber.reset(); // Reset lightsaber state
-      
-      // Ensure lightsaber is in front position after respawn
-      this.updateIdleSaberMovement(0.1);
-      
-      // Activate the lightsaber if it wasn't already active
-      if (!this.isLightsaberActive) {
-        this.lightsaber.activate();
-        this.isLightsaberActive = true;
-      }
+      // Position lightsaber properly
+      this.lightsaber.position.set(0, -0.3, -0.7);
+      this.lightsaber.rotation.set(Math.PI / 20, 0, 0);
+      this.lightsaber.activate();
     }
     
-    // Dispatch health changed event
+    // Dispatch events
     this.dispatchEvent({ 
       type: 'healthChanged', 
-      detail: { 
-        health: this.health, 
-        maxHealth: this.maxHealth 
-      } 
+      detail: { health: this.maxHealth, maxHealth: this.maxHealth } 
     });
-    
-    // Dispatch respawned event
     this.dispatchEvent({ type: 'respawned' });
     
-    console.log("Player respawned with full health:", this.health);
+    console.log("Player respawned - State:", this.state);
     
-    // Store last respawn time to prevent rapid respawns
-    this.lastRespawnTime = currentTime;
+    // Store last respawn time
+    this.lastRespawnTime = performance.now();
   }
 
   private handleJumping(deltaTime: number): void {
