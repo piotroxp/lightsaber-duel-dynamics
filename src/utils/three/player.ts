@@ -140,6 +140,11 @@ export class Player extends Group {
     { id: 7, name: "Form VII", description: "Ferocious, unpredictable form" }
   ];
   
+  // Add new property for blade clash state
+  private isInClashCooldown: boolean = false;
+  private clashCooldownTime: number = 0;
+  private clashCooldownDuration: number = 800; // ms
+  
   constructor(scene: Scene, camera: Camera) {
     super();
     
@@ -338,6 +343,19 @@ export class Player extends Group {
     
     // Update head bobbing if needed
     this.updateHeadBob(deltaTime);
+    
+    // Handle clash cooldown timer
+    if (this.isInClashCooldown) {
+      this.clashCooldownTime += deltaTime * 1000;
+      if (this.clashCooldownTime >= this.clashCooldownDuration) {
+        this.isInClashCooldown = false;
+        this.clashCooldownTime = 0;
+        // Return to normal state after clash
+        if (this.state === PlayerState.STAGGERED) {
+          this.state = PlayerState.IDLE;
+        }
+      }
+    }
   }
   
   /**
@@ -1758,5 +1776,152 @@ export class Player extends Group {
     
     // Slight upward angle for natural holding position
     this.lightsaber.rotation.set(Math.PI / 12, 0, 0);
+  }
+
+  // Add method to handle blade clash
+  public handleBladeClash(clashPosition: Vector3, opponentDirection: Vector3): void {
+    if (this.isInClashCooldown) return; // Already in clash state
+    
+    this.isInClashCooldown = true;
+    this.clashCooldownTime = 0;
+    
+    // Set player to staggered state
+    this.state = PlayerState.STAGGERED;
+    
+    // Cancel any ongoing attack
+    this.isSwinging = false;
+    
+    // Create intense clash effect
+    this.createClashEffect(clashPosition);
+    
+    // Add blade lock effect - push player back slightly
+    const pushDirection = opponentDirection.clone().normalize();
+    this.velocity.add(pushDirection.multiplyScalar(-2)); // Push player back
+    
+    // Play clash sound with random variation
+    const pitchVariation = 0.9 + Math.random() * 0.2; // Between 0.9 and 1.1
+    gameAudio.playSound('saberClash', { volume: 0.8, pitch: pitchVariation });
+    
+    // Add camera shake
+    this.applyCameraShake(1.2);
+    
+    // Start clash recovery animation - more dramatic than regular recovery
+    this.startClashRecoveryAnimation();
+  }
+
+  // Create intense clash effect
+  private createClashEffect(position: Vector3): void {
+    // Create primary spark shower
+    const sparkCount = 20 + Math.floor(Math.random() * 10);
+    const sparkSize = 0.05 + Math.random() * 0.05;
+    const sparkColor = 0xFFFFFF;
+    
+    for (let i = 0; i < sparkCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = Math.random() * 0.5;
+      const speed = 0.05 + Math.random() * 0.15;
+      
+      const sparkPos = position.clone();
+      const direction = new Vector3(
+        Math.cos(angle) * distance,
+        Math.random() * 0.5, // Upward bias
+        Math.sin(angle) * distance
+      ).normalize();
+      
+      // Create delayed sparks for more dramatic effect
+      setTimeout(() => {
+        createHitEffect(
+          this.scene, 
+          sparkPos, 
+          sparkSize, 
+          sparkColor, 
+          direction, 
+          speed, 
+          1000 + Math.random() * 500
+        );
+      }, i * 20); // Stagger spark creation
+    }
+    
+    // Create central flash
+    createHitEffect(
+      this.scene,
+      position.clone(),
+      0.2,
+      0xFFFFFF,
+      undefined,
+      0,
+      200
+    );
+  }
+
+  // Enhanced clash recovery animation
+  private startClashRecoveryAnimation(): void {
+    if (!this.lightsaber) return;
+    
+    // Save current position and rotation
+    const startPos = this.lightsaber.position.clone();
+    const startRot = this.lightsaber.rotation.clone();
+    
+    // Target position - pulled back defensively
+    const targetPos = new Vector3(-0.2, -0.8, -0.5);
+    const targetRot = new Euler(Math.PI / 6, -Math.PI / 6, 0);
+    
+    // Animation variables
+    const duration = 800; // Longer recovery
+    const startTime = performance.now();
+    
+    // Dramatic clash recovery with recoil
+    const animateClashRecovery = () => {
+      if (!this.lightsaber) return;
+      
+      const now = performance.now();
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Use bouncy ease for more dramatic recoil
+      let eased;
+      if (progress < 0.3) {
+        // Initial fast recoil
+        eased = this.easeOutQuint(progress / 0.3);
+      } else if (progress < 0.7) {
+        // Hold position during stagger
+        eased = 1;
+      } else {
+        // Return to ready position
+        eased = 1 - this.easeInOutQuad((progress - 0.7) / 0.3);
+      }
+      
+      // Apply position with recoil
+      const recoilPos = startPos.clone().add(new Vector3(-0.3, 0.1, 0.2).multiplyScalar(eased));
+      this.lightsaber.position.copy(recoilPos);
+      
+      // Apply dramatic rotation
+      const recoilRot = new Euler(
+        startRot.x + (Math.PI / 4) * eased,
+        startRot.y - (Math.PI / 4) * eased,
+        startRot.z + (Math.PI / 8) * eased
+      );
+      this.lightsaber.rotation.copy(recoilRot);
+      
+      // Continue animation until complete
+      if (progress < 1 && this.isInClashCooldown) {
+        requestAnimationFrame(animateClashRecovery);
+      } else {
+        // Final position after recovery
+        this.resetLightsaberPosition();
+      }
+    };
+    
+    // Start the animation
+    requestAnimationFrame(animateClashRecovery);
+  }
+
+  // Additional easing functions for clash effects
+  private easeOutQuint(t: number): number {
+    return 1 - Math.pow(1 - t, 5);
+  }
+
+  private easeInOutQuad(t: number): number {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
   }
 }
