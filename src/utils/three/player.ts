@@ -282,6 +282,17 @@ export class Player extends Group {
     // Apply physics
     this.checkGroundCollision();
     
+    // Check if player is dead
+    if (this.health <= 0 && this.state !== PlayerState.DEAD) {
+      this.state = PlayerState.DEAD;
+      this.dispatchEvent({ type: 'died' });
+      
+      // Respawn after a delay
+      setTimeout(() => {
+        this.respawn();
+      }, 2000); // 2 second delay before respawn
+    }
+    
     // Update combat state
     this.updateAttack(deltaTime);
     
@@ -396,7 +407,9 @@ export class Player extends Group {
    * Check and handle ground collision
    */
   private checkGroundCollision(): void {
-    const groundLevel = 0.9; // Player's height/2
+    // Set groundLevel to exactly 0 (the actual ground plane)
+    const groundLevel = 0; 
+    const eyeHeight = 1.8; // Player's eye height
     
     if (this.position.y <= groundLevel) {
       // Player has hit the ground
@@ -404,6 +417,11 @@ export class Player extends Group {
       this.velocity.y = 0; // Important - stop downward velocity
       this.isGrounded = true;
       this.isJumping = false;
+      
+      // Reset camera height to eye level
+      if (this.camera) {
+        this.camera.position.y = eyeHeight;
+      }
     } else {
       // Player is above ground
       this.isGrounded = false;
@@ -415,6 +433,7 @@ export class Player extends Group {
       this.position.set(0, groundLevel, 0);
       this.velocity.set(0, 0, 0);
       this.isGrounded = true;
+      this.respawn(); // Call respawn to reset player state
     }
   }
   
@@ -954,27 +973,74 @@ export class Player extends Group {
     return this.lastRespawnTime;
   }
   
-  respawn(): void {
+  /**
+   * Respawn the player after death
+   */
+  public respawn(): void {
+    // Only respawn if player is dead or enough time has passed
+    const currentTime = performance.now();
+    if (this.state !== PlayerState.DEAD && 
+        (currentTime - this.lastRespawnTime) < 5000) {
+      return; // Prevent rapid respawns
+    }
+    
+    console.log("Respawning player...");
+    
+    // Reset player position to a safe spawn point
+    this.position.set(0, 0, 0);
+    this.velocity.set(0, 0, 0);
+    
     // Reset health
     this.health = this.maxHealth;
-    
-    // Reset position
-    this.position.set(0, 0.9, 0);
     
     // Reset state
     this.state = PlayerState.IDLE;
     
-    // Record respawn time
-    this.lastRespawnTime = performance.now() / 1000;
+    // Reset flags
+    this.isGrounded = true;
+    this.isJumping = false;
+    this.isSwinging = false;
+    this.isAttackPressed = false;
+    this.isHeavyAttackPressed = false;
+    this.isBlockPressed = false;
     
-    // Dispatch event
+    // Reset camera position
+    if (this.camera) {
+      this.camera.position.y = 1.8;
+      this.camera.position.x = 0;
+      this.camera.position.z = 0;
+    }
+    
+    // Reset lightsaber
+    if (this.lightsaber) {
+      this.lightsaber.reset(); // Reset lightsaber state
+      
+      // Ensure lightsaber is in front position after respawn
+      this.updateIdleSaberMovement(0.1);
+      
+      // Activate the lightsaber if it wasn't already active
+      if (!this.isLightsaberActive) {
+        this.lightsaber.activate();
+        this.isLightsaberActive = true;
+      }
+    }
+    
+    // Dispatch health changed event
     this.dispatchEvent({ 
-      type: 'healthChanged' as any, 
+      type: 'healthChanged', 
       detail: { 
         health: this.health, 
         maxHealth: this.maxHealth 
       } 
     });
+    
+    // Dispatch respawned event
+    this.dispatchEvent({ type: 'respawned' });
+    
+    console.log("Player respawned with full health:", this.health);
+    
+    // Store last respawn time to prevent rapid respawns
+    this.lastRespawnTime = currentTime;
   }
 
   private handleJumping(deltaTime: number): void {
@@ -1103,50 +1169,38 @@ export class Player extends Group {
     
     console.log("Creating lightsaber");
     
-    // Create lightsaber
-    this.lightsaber = new Lightsaber({
-      color: '#3366ff', // Blue lightsaber
-      bladeLength: 1.2,
-      hiltLength: 0.3,
-      glowIntensity: 1.2,
-      scene: this.scene // Pass scene reference if needed by Lightsaber
+    // Create the lightsaber
+    this.lightsaber = new Lightsaber(this.scene, {
+      bladeLength: 1.0,
+      bladeColor: 0x0088ff,
+      hiltLength: 0.2,
+      debug: this.debugMode
     });
+
+    // Add lightsaber to camera instead of player
+    this.camera.add(this.lightsaber);
     
-    // Add lightsaber to the player group initially, it will be positioned relative to camera later
-    this.add(this.lightsaber); 
+    // Set initial position relative to camera (local coordinates)
+    this.lightsaber.position.set(0, -0.3, -0.7);
+    this.lightsaber.rotation.set(Math.PI / 20, 0, 0);
     
-    // Set initial relative position/rotation (will be updated dynamically)
-    this.lightsaber.position.copy(this.lightsaberOffset); 
-    this.lightsaber.rotation.set(Math.PI / 10, -Math.PI / 8, Math.PI / 16);
+    // Log creation
+    console.log("Lightsaber created and added to camera");
     
-    // Force the lightsaber to be visible
-    this.lightsaber.visible = true;
-    
-    console.log("Lightsaber created and added to player group at relative position:", this.lightsaber.position);
-    
-    // IMMEDIATE ACTIVATION: Don't delay activation
-    if (this.lightsaber) {
-      console.log("Immediately activating lightsaber");
-      this.lightsaber.activate();
-      this.isLightsaberActive = true;
-      
-      // Verify activation status
-      if (this.lightsaber.isActive()) {
-        console.log("Blade components verified");
-      } else {
-        console.error("Blade components missing");
-      }
-    }
-    
-    // Force another activation after a short delay as fallback
+    // Activate immediately
     setTimeout(() => {
-      if (this.lightsaber) {
-        console.log("Delayed activation check");
-        this.lightsaber.activate();
-        this.isLightsaberActive = true;
-        console.log("Lightsaber activation reinforced");
-      }
+      this.lightsaber?.activate();
+      this.isLightsaberActive = true;
     }, 100);
+    
+    // Ensure blade components are valid
+    setTimeout(() => {
+      console.log("Delayed activation check");
+      if (this.lightsaber && !this.lightsaber.isActive()) {
+        console.log("Lightsaber activation reinforced");
+        this.lightsaber.activate();
+      }
+    }, 500);
   }
 
   // Implement key release event listener that was missing
@@ -1199,38 +1253,36 @@ export class Player extends Group {
     });
   }
 
-  // Add a method to update lightsaber swing animation
+  // Fix the lightsaber swing update
   private updateLightsaberSwing(deltaTime: number): void {
     if (!this.lightsaber || !this.isSwinging) return;
     
     const elapsed = performance.now() - this.swingStartTime;
     const progress = Math.min(elapsed / this.swingDuration, 1);
     
-    // Simple swing animation - arc movement
+    // Simple swing animation with local camera space
     if (progress < 1) {
       // Calculate swing angle based on progress (0 to 1)
-      const swingAngle = Math.sin(progress * Math.PI) * (Math.PI * 0.6); // Wider swing
-      const verticalAngle = Math.sin(progress * Math.PI * 2) * (Math.PI / 8); // Add slight vertical movement
+      const swingAngle = Math.sin(progress * Math.PI) * (Math.PI * 0.6); 
+      const verticalAngle = Math.sin(progress * Math.PI * 2) * (Math.PI / 8);
       
-      // Reset to base position/rotation before applying swing
-      this.lightsaber.rotation.set(Math.PI / 10, -Math.PI / 8, Math.PI / 16); 
+      // Reset to base position/rotation
+      this.lightsaber.position.set(0, -0.3, -0.7);
+      this.lightsaber.rotation.set(Math.PI / 20, 0, 0);
       
-      // Apply swing rotation - rotate around z-axis for horizontal swing
-      this.lightsaber.rotateZ(swingAngle * (this.currentAttackType === 'heavy' ? 1.2 : 1)); // Heavier swing for heavy attack
-      this.lightsaber.rotateX(verticalAngle); // Add vertical element
+      // Apply local rotations
+      this.lightsaber.rotateZ(swingAngle);
+      this.lightsaber.rotateX(verticalAngle); 
       
       // Add some forward motion during swing
-      const forwardPush = Math.sin(progress * Math.PI) * 0.15;
-      this.lightsaber.position.z = -0.7 - forwardPush; // Base Z position
-      this.lightsaber.position.x = 0.35 + Math.sin(progress * Math.PI) * 0.1; // Slight sideways movement
+      const forwardPush = Math.sin(progress * Math.PI) * 0.2;
+      this.lightsaber.position.z -= forwardPush;
     } else {
-      // Swing complete
+      // Swing complete, reset to neutral
       this.isSwinging = false;
-      
-      // Return to neutral position
-      this.lightsaber.position.set(0.35, -0.3, -0.7);
-      this.lightsaber.rotation.set(Math.PI / 10, -Math.PI / 8, Math.PI / 16);
-      this.state = PlayerState.IDLE; // Ensure state resets after swing
+      this.lightsaber.position.set(0, -0.3, -0.7);
+      this.lightsaber.rotation.set(Math.PI / 20, 0, 0);
+      this.state = PlayerState.IDLE;
     }
   }
 
@@ -1238,22 +1290,22 @@ export class Player extends Group {
   private updateIdleSaberMovement(deltaTime: number): void {
     if (!this.lightsaber || !this.camera) return;
 
-    // Define the target position and rotation *relative to the camera*
-    const targetLocalPosition = this.lightsaberOffset.clone();
-    const targetLocalRotation = new Euler(Math.PI / 10, -Math.PI / 8, Math.PI / 16);
-    const targetLocalQuaternion = new Quaternion().setFromEuler(targetLocalRotation);
+    // IMPORTANT: Make the lightsaber a child of the camera
+    // This ensures it follows the camera perfectly
+    if (this.lightsaber.parent !== this.camera) {
+      this.camera.add(this.lightsaber);
+      console.log("Attached lightsaber to camera");
+    }
 
-    // Convert target local camera coordinates to world coordinates
-    const targetWorldPosition = this.camera.localToWorld(targetLocalPosition.clone());
-    const targetWorldQuaternion = new Quaternion().multiplyQuaternions(this.camera.quaternion, targetLocalQuaternion);
+    // Define fixed local position and rotation relative to camera
+    // These are in camera's local space, not world space
+    const targetPosition = new Vector3(0, -0.3, -0.7);
+    const targetRotation = new Euler(Math.PI / 20, 0, 0);
+    const targetQuaternion = new Quaternion().setFromEuler(targetRotation);
 
-    // Apply smoothing (lerp for position, slerp for rotation)
-    const positionLerpFactor = 0.1; // Adjust for more/less lag
-    const rotationSlerpFactor = 0.1; // Adjust for more/less lag
-
-    // Interpolate the lightsaber's *world* position and rotation
-    this.lightsaber.position.lerp(targetWorldPosition, positionLerpFactor);
-    this.lightsaber.quaternion.slerp(targetWorldQuaternion, rotationSlerpFactor);
+    // Use simple lerp in local space (much more reliable)
+    this.lightsaber.position.lerp(targetPosition, 0.15);
+    this.lightsaber.quaternion.slerp(targetQuaternion, 0.15);
   }
 
   public setDebugMode(enabled: boolean): void {
