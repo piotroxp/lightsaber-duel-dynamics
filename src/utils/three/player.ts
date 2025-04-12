@@ -170,10 +170,10 @@ export class Player extends Group {
           this.isBackwardPressed = true;
           break;
         case 'KeyA':
-          this.isLeftPressed = true;
+          this.isRightPressed = true;
           break;
         case 'KeyD':
-          this.isRightPressed = true;
+          this.isLeftPressed = true;
           break;
         case 'Space':
           this.isJumpPressed = true;
@@ -210,10 +210,10 @@ export class Player extends Group {
           this.isBackwardPressed = false;
           break;
         case 'KeyA':
-          this.isLeftPressed = false;
+          this.isRightPressed = false;
           break;
         case 'KeyD':
-          this.isRightPressed = false;
+          this.isLeftPressed = false;
           break;
         case 'Space':
           this.isJumpPressed = false;
@@ -1210,8 +1210,8 @@ export class Player extends Group {
       switch (event.code) {
         case 'KeyW': this.isForwardPressed = false; break;
         case 'KeyS': this.isBackwardPressed = false; break;
-        case 'KeyA': this.isLeftPressed = false; break;
-        case 'KeyD': this.isRightPressed = false; break;
+        case 'KeyA': this.isRightPressed = false; break;
+        case 'KeyD': this.isLeftPressed = false; break;
         case 'Space': this.isJumpPressed = false; break;
         case 'ShiftLeft': this.isBlockPressed = false; break;
       }
