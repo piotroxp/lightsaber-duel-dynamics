@@ -288,12 +288,17 @@ const Game: React.FC = () => {
   }, []);
 
   // Add handler for stance selection from UI
-  const handleSelectStance = (stanceId) => {
-    // Call method on player object in the game scene
-    if (gameSceneRef.current?.scene?.player) {
-      gameSceneRef.current.scene.player.setStance(stanceId);
+  const handleSelectStance = useCallback((stanceId: number) => {
+    console.log(`Selecting stance: ${stanceId}`);
+    
+    // Access the player correctly through gameSceneRef
+    if (gameSceneRef.current?.player) {
+      console.log("Player found, setting stance");
+      gameSceneRef.current.player.setStance(stanceId);
+    } else {
+      console.error("Player not found in gameScene");
     }
-  };
+  }, [gameSceneRef]);
 
   return (
     <div className="relative w-full h-full">

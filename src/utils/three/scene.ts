@@ -917,4 +917,9 @@ export class GameScene {
     this.clock.start(); // Ensure the clock is running before the first frame
     this.animate(); // <<< START the animation loop here
   }
+
+  // Add a getter to expose the player directly
+  get player(): Player {
+    return this._player;
+  }
 }

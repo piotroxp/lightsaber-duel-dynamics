@@ -165,6 +165,9 @@ export class Player extends Group {
 
     // Setup input listeners at the VERY END of the constructor
     this.setupInputListeners(); 
+    
+    // Setup stance system
+    this.setupStanceSystem();
   }
   
   /**
@@ -1405,57 +1408,39 @@ export class Player extends Group {
       this.state = PlayerState.BLOCKING;
       this.isBlocking = true;
       
-      // Position lightsaber in blocking stance based on current form
+      // Position lightsaber in blocking stance - CORRECTED POSITION
       if (this.lightsaber) {
-        // Base position for all stances - slightly forward
-        const basePosition = new Vector3(0, -0.15, -0.6);
+        // Base position - position saber in front of player
+        const basePosition = new Vector3(0, -0.1, -0.6);
+        this.lightsaber.position.copy(basePosition);
         
-        // Choose blocking angle based on stance
-        let rotationX, rotationY, rotationZ;
+        // CRITICAL FIX: These rotations will place the saber HORIZONTALLY across the view
+        // We need to rotate it so the blade extends sideways, not toward the player
+        const rotationX = Math.PI / 2;  // 90 degrees around X axis
+        const rotationY = 0;            // No Y axis rotation
+        const rotationZ = Math.PI / 2;  // 90 degrees around Z axis - THIS IS KEY
         
-        switch(this.currentStance) {
-          case 3: // Soresu - horizontal barrier
-            // Position centered and forward
-            this.lightsaber.position.copy(basePosition);
-            // IMPORTANT: This rotation places the blade ACROSS the screen
-            rotationX = Math.PI / 2;  // 90 degrees on X axis
-            rotationY = Math.PI / 2;  // 90 degrees on Y axis
-            rotationZ = 0;
-            break;
-            
-          case 2: // Makashi - angled, elegant
-            this.lightsaber.position.copy(basePosition).add(new Vector3(0.1, 0, 0));
-            rotationX = Math.PI / 3;
-            rotationY = Math.PI / 3;
-            rotationZ = Math.PI / 6;
-            break;
-            
-          case 5: // Djem So - powerful, ready to counter
-            this.lightsaber.position.copy(basePosition).add(new Vector3(-0.1, 0.1, 0));
-            rotationX = Math.PI / 2.5;
-            rotationY = Math.PI / 2.2;
-            rotationZ = -Math.PI / 12;
-            break;
-            
-          default: // All other forms use standard horizontal block
-            this.lightsaber.position.copy(basePosition);
-            rotationX = Math.PI / 2;  // 90 degrees on X axis
-            rotationY = Math.PI / 2;  // 90 degrees on Y axis
-            rotationZ = 0;
-        }
-        
-        // Apply the rotation to place blade horizontally across view
+        // Apply the correct rotation that places blade horizontally
         const blockRotation = new Euler(rotationX, rotationY, rotationZ);
-        this.lightsaber.quaternion.slerp(
-          new Quaternion().setFromEuler(blockRotation),
-          0.3  // Adjust speed of transition
-        );
+        this.lightsaber.quaternion.setFromEuler(blockRotation);
+        
+        // Optional: Add a slight stance variation based on current form
+        if (this.currentStance === 3) { // Soresu - more defensive
+          this.lightsaber.position.y += 0.05;
+        } else if (this.currentStance === 5) { // Djem So - power stance
+          this.lightsaber.position.z -= 0.1;
+        }
       }
     }
     else if (!this.isBlockPressed && this.state === PlayerState.BLOCKING) {
       // Exit blocking state
       this.state = PlayerState.IDLE;
       this.isBlocking = false;
+      
+      // Return lightsaber to normal position
+      if (this.lightsaber) {
+        this.resetLightsaberPosition();
+      }
     }
   }
 
