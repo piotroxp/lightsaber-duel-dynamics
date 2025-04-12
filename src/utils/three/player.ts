@@ -279,7 +279,7 @@ export class Player extends Group {
     // Process movement input and update vectors
     this.updateMovement(deltaTime);
     
-    // Check ground collision
+    // Apply physics
     this.checkGroundCollision();
     
     // Update combat state
@@ -299,6 +299,97 @@ export class Player extends Group {
     
     // Update head bobbing if needed
     this.updateHeadBob(deltaTime);
+  }
+  
+  /**
+   * Process player movement based on input
+   */
+  private updateMovement(deltaTime: number): void {
+    // Reset movement vector
+    this.moveDirection.set(0, 0, 0);
+    
+    // Calculate camera direction vectors for movement relative to camera
+    const cameraDirection = new Vector3();
+    this.camera.getWorldDirection(cameraDirection);
+    cameraDirection.y = 0; // Restrict to horizontal plane
+    cameraDirection.normalize();
+    
+    // Get the camera's right vector (perpendicular to direction)
+    const cameraRight = new Vector3(cameraDirection.z, 0, -cameraDirection.x);
+    
+    // Calculate movement direction based on keys
+    if (this.isForwardPressed) {
+      this.moveDirection.add(cameraDirection);
+      this.isMovingForward = true;
+    } else {
+      this.isMovingForward = false;
+    }
+    
+    if (this.isBackwardPressed) {
+      this.moveDirection.sub(cameraDirection);
+      this.isMovingBackward = true;
+    } else {
+      this.isMovingBackward = false;
+    }
+    
+    if (this.isLeftPressed) {
+      this.moveDirection.sub(cameraRight);
+      this.isMovingLeft = true;
+    } else {
+      this.isMovingLeft = false;
+    }
+    
+    if (this.isRightPressed) {
+      this.moveDirection.add(cameraRight);
+      this.isMovingRight = true;
+    } else {
+      this.isMovingRight = false;
+    }
+    
+    // Normalize the movement direction if it exists
+    if (this.moveDirection.lengthSq() > 0) {
+      this.moveDirection.normalize();
+      
+      // Set player state to moving
+      if (this.state !== PlayerState.ATTACKING && 
+          this.state !== PlayerState.BLOCKING && 
+          this.state !== PlayerState.STAGGERED) {
+        this.state = PlayerState.MOVING;
+      }
+      
+      // Debug output when moving (less frequent)
+      if (this.debugMode && this.frameCount % 10 === 0) {
+        console.log("Moving - Direction:", this.moveDirection.toArray());
+      }
+    } else if (this.state === PlayerState.MOVING) {
+      // Player has stopped moving
+      this.state = PlayerState.IDLE;
+    }
+    
+    // Calculate speed (can be adjusted based on player state)
+    const speed = this.isCrouching ? this.moveSpeed * 0.5 : this.moveSpeed;
+    
+    // Set horizontal velocity components based on movement direction
+    this.velocity.x = this.moveDirection.x * speed;
+    this.velocity.z = this.moveDirection.z * speed;
+    
+    // Apply gravity if not grounded
+    if (!this.isGrounded) {
+      this.velocity.y -= this.gravity * deltaTime;
+    }
+    
+    // Apply jumping force if jump was requested
+    if (this.isJumpPressed && this.isGrounded) {
+      this.velocity.y = this.jumpForce;
+      this.isGrounded = false;
+      this.isJumping = true;
+      this.isJumpPressed = false;
+    }
+    
+    // Apply velocity to position
+    this.position.x += this.velocity.x * deltaTime;
+    this.position.z += this.velocity.z * deltaTime;
+    this.position.y += this.velocity.y * deltaTime;
   }
   
   /**
@@ -1106,53 +1197,6 @@ export class Player extends Group {
         this.isHeavyAttackPressed = false;
       }
     });
-  }
-
-  // Update the player's position handling
-  private updateMovement(deltaTime: number): void {
-    if (this.state === PlayerState.DEAD) return;
-
-    const moveSpeed = this.isCrouching ? this.moveSpeed * 0.6 : this.moveSpeed;
-    const velocity = new Vector3();
-    const rotation = this.rotation.clone();
-
-    // Ground check
-    const groundCheck = new Raycaster(
-      this.position.clone().add(new Vector3(0, 0.5, 0)),
-      new Vector3(0, -1, 0),
-      0,
-      1.0
-    );
-    const onGround = groundCheck.intersectObjects(this.groundMeshes).length > 0;
-
-    // Apply gravity
-    if (!onGround) {
-      this.velocity.y -= 9.8 * deltaTime;
-    } else {
-      this.velocity.y = 0;
-      this.position.y = 0; // Snap to ground level
-    }
-
-    // Movement during combat
-    if (this.state === PlayerState.ATTACKING) {
-      // Allow limited movement during attacks
-      const attackMoveSpeed = moveSpeed * 0.3;
-      if (this.isMovingForward) velocity.z -= attackMoveSpeed;
-      if (this.isMovingBackward) velocity.z += attackMoveSpeed;
-      if (this.isMovingLeft) velocity.x -= attackMoveSpeed;
-      if (this.isMovingRight) velocity.x += attackMoveSpeed;
-    } else {
-      // Normal movement
-      if (this.isMovingForward) velocity.z -= moveSpeed;
-      if (this.isMovingBackward) velocity.z += moveSpeed;
-      if (this.isMovingLeft) velocity.x -= moveSpeed;
-      if (this.isMovingRight) velocity.x += moveSpeed;
-    }
-
-    // Apply movement
-    velocity.applyEuler(rotation);
-    this.position.add(velocity.multiplyScalar(deltaTime));
-    this.position.add(this.velocity.clone().multiplyScalar(deltaTime));
   }
 
   // Add a method to update lightsaber swing animation
