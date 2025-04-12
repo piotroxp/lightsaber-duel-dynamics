@@ -141,6 +141,9 @@ export class Player extends Group {
     this.setupInputListeners(); 
   }
   
+  /**
+   * Sets up keyboard and mouse input event listeners
+   */
   private setupInputListeners(): void {
     // Keyboard down handler
     document.addEventListener('keydown', (event) => {
@@ -158,18 +161,20 @@ export class Player extends Group {
           this.isRightPressed = true;
           break;
         case 'Space':
-          this.isJumpPressed = true;
+          if (!this.isJumping && this.isGrounded) {
+            this.isJumpPressed = true;
+          }
           break;
-        // Attack controls
-        case 'MouseLeft':
+        case 'ControlLeft':
+        case 'ControlRight':
+          this.isCrouching = true;
+          break;
         case 'KeyF':
           this.isAttackPressed = true;
           break;
-        // Block control
         case 'KeyQ':
           this.isBlockPressed = true;
           break;
-        // Heavy attack
         case 'KeyE':
           this.isHeavyAttackPressed = true;
           break;
@@ -194,16 +199,16 @@ export class Player extends Group {
         case 'Space':
           this.isJumpPressed = false;
           break;
-        // Attack controls
-        case 'MouseLeft':
+        case 'ControlLeft':
+        case 'ControlRight':
+          this.isCrouching = false;
+          break;
         case 'KeyF':
           this.isAttackPressed = false;
           break;
-        // Block control
         case 'KeyQ':
           this.isBlockPressed = false;
           break;
-        // Heavy attack
         case 'KeyE':
           this.isHeavyAttackPressed = false;
           break;
@@ -212,10 +217,11 @@ export class Player extends Group {
     
     // Mouse events for attacks
     document.addEventListener('mousedown', (event) => {
-      if (event.button === 0 && !this.clickedOnUI) { // Left click
+      if (this.clickedOnUI) return;
+      
+      if (event.button === 0) { // Left click
         this.isAttackPressed = true;
-      }
-      if (event.button === 2 && !this.clickedOnUI) { // Right click
+      } else if (event.button === 2) { // Right click
         this.isBlockPressed = true;
       }
     });
@@ -223,45 +229,70 @@ export class Player extends Group {
     document.addEventListener('mouseup', (event) => {
       if (event.button === 0) { // Left click
         this.isAttackPressed = false;
-      }
-      if (event.button === 2) { // Right click
+      } else if (event.button === 2) { // Right click
         this.isBlockPressed = false;
       }
     });
+    
+    console.log("Input listeners initialized");
   }
   
-  private handleMovementInput(): void {
-    // Reset movement flags
-    this.isMovingForward = false;
-    this.isMovingBackward = false;
-    this.isMovingLeft = false;
-    this.isMovingRight = false;
+  /**
+   * Updates player movement based on input
+   */
+  private updateMovement(deltaTime: number): void {
+    // Skip movement if player is dead
+    if (this.state === PlayerState.DEAD) return;
+
+    // Calculate movement vector based on key inputs
+    const moveDirection = new Vector3(0, 0, 0);
     
-    // Check keyboard state
-    if (this.isForwardPressed) {
-      this.isMovingForward = true;
-      // Set move direction vector based on camera orientation
-      this.moveDirection.z = -1;
+    if (this.isForwardPressed) moveDirection.z = -1;
+    if (this.isBackwardPressed) moveDirection.z = 1;
+    if (this.isLeftPressed) moveDirection.x = -1;
+    if (this.isRightPressed) moveDirection.x = 1;
+    
+    // Only proceed if there's movement input
+    if (moveDirection.lengthSq() > 0) {
+      // Normalize for consistent diagonal movement speed
+      moveDirection.normalize();
+      
+      // Get camera direction to move relative to view
+      const cameraDirection = new Vector3();
+      this.camera.getWorldDirection(cameraDirection);
+      cameraDirection.y = 0; // Keep movement on horizontal plane
+      cameraDirection.normalize();
+      
+      // Convert to camera-relative movement
+      const forward = cameraDirection.clone();
+      const right = new Vector3(forward.z, 0, -forward.x);
+      
+      // Calculate final movement vector
+      const movementVector = new Vector3();
+      movementVector.addScaledVector(forward, -moveDirection.z);
+      movementVector.addScaledVector(right, moveDirection.x);
+      
+      if (movementVector.lengthSq() > 0) {
+        movementVector.normalize();
+        const speed = this.isCrouching ? this.moveSpeed * 0.5 : this.moveSpeed;
+        
+        // Apply movement
+        this.position.x += movementVector.x * speed * deltaTime;
+        this.position.z += movementVector.z * speed * deltaTime;
+        
+        // Update player state
+        this.state = PlayerState.MOVING;
+      }
+    } else if (this.state === PlayerState.MOVING) {
+      this.state = PlayerState.IDLE;
     }
     
-    if (this.isBackwardPressed) {
-      this.isMovingBackward = true;
-      this.moveDirection.z = 1;
-    }
-    
-    if (this.isLeftPressed) {
-      this.isMovingLeft = true;
-      this.moveDirection.x = -1;
-    }
-    
-    if (this.isRightPressed) {
-      this.isMovingRight = true;
-      this.moveDirection.x = 1;
-    }
-    
-    // Normalize direction vector to maintain consistent speed when moving diagonally
-    if (this.moveDirection.lengthSq() > 0) {
-      this.moveDirection.normalize();
+    // Handle jumping
+    if (this.isJumpPressed && this.isGrounded) {
+      this.velocity.y = this.jumpForce;
+      this.isGrounded = false;
+      this.isJumping = true;
+      this.isJumpPressed = false; // Reset to prevent continuous jumping
     }
   }
   
@@ -275,7 +306,7 @@ export class Player extends Group {
     const previousY = this.camera.position.y; // Store previous camera Y for bobbing calculation
     
     // Handle Movement Input (apply forces/velocity changes)
-    this.handleMovementInput();
+    this.updateMovement(deltaTime);
 
     // Apply gravity and ground check
     this.applyPhysics(deltaTime);
