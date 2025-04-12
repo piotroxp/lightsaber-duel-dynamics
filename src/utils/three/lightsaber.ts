@@ -1330,4 +1330,32 @@ export class Lightsaber extends Group {
   public setDebugMode(enabled: boolean): void {
     this.debugMode = enabled;
   }
+
+  /**
+   * Create a flash effect on the blade
+   * @param color The color of the flash
+   * @param duration How long the flash lasts in ms
+   */
+  public flash(color: number, duration: number = 200): void {
+    // Save original color
+    const originalColor = this.bladeColor;
+    
+    // Change blade color
+    if (this.bladeMesh && this.bladeMesh.material instanceof MeshBasicMaterial) {
+      // Save original emissive intensity
+      const originalIntensity = this.bladeMesh.material.emissiveIntensity;
+      
+      // Set flash color and increased intensity
+      this.bladeMesh.material.emissive.setHex(color);
+      this.bladeMesh.material.emissiveIntensity = 2.5;
+      
+      // Restore original after duration
+      setTimeout(() => {
+        if (this.bladeMesh && this.bladeMesh.material instanceof MeshBasicMaterial) {
+          this.bladeMesh.material.emissive.setHex(originalColor);
+          this.bladeMesh.material.emissiveIntensity = originalIntensity;
+        }
+      }, duration);
+    }
+  }
 }

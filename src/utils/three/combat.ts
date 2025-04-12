@@ -521,3 +521,107 @@ export class CombatSystem {
     this.debugMode = enabled;
   }
 }
+
+/**
+ * Calculate closest point between two line segments
+ * Used for lightsaber blade clash detection
+ */
+export function closestPointsBetweenLines(
+  line1Start: Vector3, 
+  line1End: Vector3, 
+  line2Start: Vector3, 
+  line2End: Vector3
+): { point1: Vector3, point2: Vector3, distance: number } {
+  // Direction vectors of the two lines
+  const dir1 = line1End.clone().sub(line1Start).normalize();
+  const dir2 = line2End.clone().sub(line2Start).normalize();
+  
+  // Calculate the parameters for the closest points
+  const a = dir1.dot(dir1); // Always 1 if normalized
+  const b = dir1.dot(dir2);
+  const c = dir2.dot(dir2); // Always 1 if normalized
+  
+  // Line directions are parallel (within a small epsilon)
+  const parallel = Math.abs(a * c - b * b) < 0.001;
+  
+  if (parallel) {
+    // Find closest pair of points on parallel lines
+    const d1 = line1Start.clone().sub(line2Start).dot(dir1) / a;
+    const point1 = line1Start.clone().add(dir1.clone().multiplyScalar(d1));
+    const point2 = point1.clone().add(dir2.clone().multiplyScalar(point1.clone().sub(line2Start).dot(dir2) / c));
+    return { 
+      point1, 
+      point2, 
+      distance: point1.distanceTo(point2) 
+    };
+  }
+  
+  // Set up parameters for non-parallel lines
+  const d = line1Start.clone().sub(line2Start);
+  const e = d.dot(dir1);
+  const f = d.dot(dir2);
+  
+  // Calculate parameters along each line
+  let s = (b * f - c * e) / (a * c - b * b);
+  let t = (a * f - b * e) / (a * c - b * b);
+  
+  // Clamp to line segment
+  s = Math.max(0, Math.min(1, s));
+  t = Math.max(0, Math.min(1, t));
+  
+  // Calculate the closest points
+  const point1 = line1Start.clone().add(dir1.clone().multiplyScalar(s));
+  const point2 = line2Start.clone().add(dir2.clone().multiplyScalar(t));
+  
+  return { 
+    point1, 
+    point2, 
+    distance: point1.distanceTo(point2) 
+  };
+}
+
+/**
+ * Create a visual clash effect at the clash point
+ */
+export function createClashEffect(scene: Scene, position: Vector3): void {
+  // Create multiple spark particles in different directions
+  const sparkCount = 15;
+  
+  for (let i = 0; i < sparkCount; i++) {
+    // Random direction
+    const angle = Math.random() * Math.PI * 2;
+    const spread = Math.random() * 0.5;
+    
+    const direction = new Vector3(
+      Math.cos(angle) * spread,
+      Math.random() * 0.5 - 0.25, // Some vertical variation
+      Math.sin(angle) * spread
+    ).normalize();
+    
+    // Random size and color
+    const size = 0.05 + Math.random() * 0.05;
+    const color = 0xFFFFFF; // White sparks
+    const lifetime = 300 + Math.random() * 200;
+    
+    createHitEffect(
+      scene,
+      position.clone(),
+      size,
+      color,
+      direction,
+      0.2 + Math.random() * 0.3, // Speed
+      lifetime
+    );
+  }
+  
+  // Add a central flash
+  createHitEffect(
+    scene,
+    position.clone(),
+    0.2,
+    0xFFFFFF,
+    undefined,
+    0,
+    150
+  );
+}

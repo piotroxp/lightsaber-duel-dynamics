@@ -90,6 +90,10 @@ export class Enemy extends Group {
   
   private bobTime: number = 0; // For walking animation
   
+  // Add clash properties to the Enemy class
+  private isInClashCooldown: boolean = false;
+  private clashCooldownTime: number = 0;
+  
   constructor(scene: Scene, options: EnemyOptions = {}) {
     super();
     
@@ -862,5 +866,41 @@ export class Enemy extends Group {
     this.debugMode = enabled;
     if (this.lightsaber) this.lightsaber.setDebugMode(enabled); // Propagate if needed
     // Toggle enemy-specific debug visuals
+  }
+
+  /**
+   * Handle a blade clash with another lightsaber
+   * @param clashPoint The world position where the clash occurred
+   * @param recoilDirection The direction to apply recoil force
+   */
+  public handleBladeClash(clashPoint: Vector3, recoilDirection: Vector3): void {
+    // Skip if in cooldown
+    if (this.isInClashCooldown) return;
+    
+    // Set cooldown flag
+    this.isInClashCooldown = true;
+    this.clashCooldownTime = performance.now();
+    
+    // Add slight recoil
+    const recoilForce = 4.0; // Stronger recoil for enemy
+    this.velocity.add(recoilDirection.clone().multiplyScalar(recoilForce));
+    
+    // Add stagger effect
+    this.setState('staggered');
+    setTimeout(() => {
+      if (this.state === 'staggered') {
+        this.setState('idle');
+      }
+    }, 800);
+    
+    // Add visual feedback
+    if (this.lightsaber) {
+      this.lightsaber.flash(0xFFFFFF, 150);
+    }
+    
+    // Reset cooldown after duration
+    setTimeout(() => {
+      this.isInClashCooldown = false;
+    }, 800); // Longer cooldown for enemy
   }
 }

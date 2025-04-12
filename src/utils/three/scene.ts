@@ -28,7 +28,7 @@ import { Player } from './player';
 import { Enemy } from './enemy';
 import { CombatSystem } from './combat';
 import gameAudio from './audio';
-import { createClashEffect } from './effects';
+import { createClashEffect, closestPointsBetweenLines } from './combat';
 
 export class GameScene {
   private container: HTMLElement;
@@ -927,94 +927,76 @@ export class GameScene {
     return this._player;
   }
 
-  // Add an enhanced collision detection system
+  // Improved checkLightsaberCollisions method
   private checkLightsaberCollisions(deltaTime: number): void {
-    if (!this.player || !this.enemy) return;
+    // We need both a player and at least one enemy
+    if (!this._player || this.enemies.length === 0) return;
     
-    // Only check collisions when both are attacking or one is attacking and one is blocking
-    const playerIsAttacking = this.player.getState() === PlayerState.ATTACKING;
-    const enemyIsAttacking = this.enemy.getState() === PlayerState.ATTACKING;
-    const playerIsBlocking = this.player.getState() === PlayerState.BLOCKING;
-    const enemyIsBlocking = this.enemy.getState() === PlayerState.BLOCKING;
+    // Get the first enemy for now (could iterate through all enemies later)
+    const enemy = this.enemies[0];
     
-    // If neither is attacking, no collision possible
-    if (!playerIsAttacking && !enemyIsAttacking) return;
+    // Only check collisions if both player and enemy exist and both have a lightsaber
+    if (!enemy || !this._player) return;
     
-    // Both in cooldown, skip detection
-    if (this.player.isInClashCooldown && this.enemy.isInClashCooldown) return;
+    // Get their current states
+    const playerState = this._player.getState();
+    const enemyState = enemy.getState();
     
-    // Get blade positions
-    const playerBladeStart = this.player.getLightsaberHiltPosition();
-    const playerBladeEnd = this.player.getLightsaberTipPosition();
-    const enemyBladeStart = this.enemy.getLightsaberHiltPosition();
-    const enemyBladeEnd = this.enemy.getLightsaberTipPosition();
+    // Only check for clash if both are in a state where clash can happen
+    const playerCanClash = playerState === 'attacking' || playerState === 'blocking';
+    const enemyCanClash = enemyState === 'attacking' || enemyState === 'blocking';
     
-    // Calculate closest points between the two blade line segments
-    const result = this.closestPointsBetweenLineSegments(
-      playerBladeStart, playerBladeEnd,
-      enemyBladeStart, enemyBladeEnd
-    );
+    if (!playerCanClash || !enemyCanClash) return;
     
-    // If blades are close enough, trigger clash
-    const distance = result.distance;
-    if (distance < 0.2) { // Collision threshold
-      // Calculate collision position (midpoint between closest points)
-      const collisionPoint = result.pointOnLine1.clone().add(result.pointOnLine2).multiplyScalar(0.5);
+    // Skip if either is in cooldown
+    const playerInCooldown = (this._player as any).isInClashCooldown || false;
+    const enemyInCooldown = (enemy as any).isInClashCooldown || false;
+    
+    if (playerInCooldown && enemyInCooldown) return;
+    
+    // Get blade positions for collision check
+    try {
+      const playerBladeStart = this._player.getLightsaberHiltPosition();
+      const playerBladeEnd = this._player.getLightsaberTipPosition();
+      const enemyBladeStart = enemy.getLightsaberHiltPosition();
+      const enemyBladeEnd = enemy.getLightsaberTipPosition();
       
-      // Get directions from each character to collision for proper recoil
-      const playerToCollision = collisionPoint.clone().sub(this.player.position).normalize();
-      const enemyToCollision = collisionPoint.clone().sub(this.enemy.position).normalize();
+      // Debug log
+      console.log("Checking blade clash between:", 
+        playerBladeStart, playerBladeEnd, 
+        enemyBladeStart, enemyBladeEnd
+      );
       
-      // Create clash effect at collision point
-      createClashEffect(this.scene, collisionPoint, 1.0);
+      // Calculate closest points between the two blade segments
+      const { point1, point2, distance } = closestPointsBetweenLines(
+        playerBladeStart, playerBladeEnd,
+        enemyBladeStart, enemyBladeEnd
+      );
       
-      // Trigger clash handling on both characters
-      this.player.handleBladeClash(collisionPoint, enemyToCollision);
-      this.enemy.handleBladeClash(collisionPoint, playerToCollision);
+      // Debug distance
+      console.log("🗡️ Blade distance:", distance);
       
-      // Log the collision for debugging
-      console.log("Lightsaber clash detected!", distance);
+      // If blades are close enough, trigger clash
+      const CLASH_THRESHOLD = 0.2; // How close blades need to be to clash
+      if (distance < CLASH_THRESHOLD) {
+        console.log("⚔️ LIGHTSABER CLASH DETECTED!");
+        
+        // Calculate clash point (midpoint between closest points)
+        const clashPoint = new Vector3().addVectors(point1, point2).multiplyScalar(0.5);
+        
+        // Calculate recoil directions (away from clash point)
+        const playerRecoilDir = this._player.position.clone().sub(clashPoint).normalize();
+        const enemyRecoilDir = enemy.position.clone().sub(clashPoint).normalize();
+        
+        // Handle clash for both combatants
+        this._player.handleBladeClash(clashPoint, playerRecoilDir);
+        enemy.handleBladeClash(clashPoint, enemyRecoilDir);
+        
+        // Create visual effects at clash point
+        createClashEffect(this.scene, clashPoint);
+      }
+    } catch (error) {
+      console.error("Error in lightsaber clash detection:", error);
     }
-  }
-
-  // Helper function to find closest points between two line segments
-  private closestPointsBetweenLineSegments(
-    line1Start: Vector3, line1End: Vector3,
-    line2Start: Vector3, line2End: Vector3
-  ): { pointOnLine1: Vector3, pointOnLine2: Vector3, distance: number } {
-    const u = line1End.clone().sub(line1Start);
-    const v = line2End.clone().sub(line2Start);
-    const w = line1Start.clone().sub(line2Start);
-    
-    const a = u.dot(u);
-    const b = u.dot(v);
-    const c = v.dot(v);
-    const d = u.dot(w);
-    const e = v.dot(w);
-    
-    const D = a * c - b * b;
-    let sc, tc;
-    
-    if (D < 0.0001) {
-      sc = 0;
-      tc = (b > c ? d / b : e / c);
-    } else {
-      sc = (b * e - c * d) / D;
-      tc = (a * e - b * d) / D;
-    }
-    
-    // Clamp sc and tc to [0,1]
-    sc = Math.max(0, Math.min(1, sc));
-    tc = Math.max(0, Math.min(1, tc));
-    
-    // Calculate points
-    const point1 = line1Start.clone().add(u.multiplyScalar(sc));
-    const point2 = line2Start.clone().add(v.multiplyScalar(tc));
-    
-    return {
-      pointOnLine1: point1,
-      pointOnLine2: point2,
-      distance: point1.distanceTo(point2)
-    };
   }
 }
