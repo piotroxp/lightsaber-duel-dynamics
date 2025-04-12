@@ -86,6 +86,10 @@ export class Enemy extends Group {
   // Add these damage visual indicators
   private damageMarks: Mesh[] = [];
   
+  private debugMode: boolean = true;
+  
+  private bobTime: number = 0; // For walking animation
+  
   constructor(scene: Scene, options: EnemyOptions = {}) {
     super();
     
@@ -128,6 +132,12 @@ export class Enemy extends Group {
   }
   
   update(deltaTime: number, playerPosition: Vector3, playerDirection: Vector3): void {
+    const previousY = this.position.y; // Store previous Y
+    
+    if (this.debugMode && Math.random() < 0.01) { // Example less frequent log
+       console.log(`Enemy ${this.id} State: ${this.state}`);
+    }
+    
     // Skip if dead
     if (this.state === EnemyState.DEAD) {
       // Handle respawn logic
@@ -179,6 +189,18 @@ export class Enemy extends Group {
     if (this.lightsaber) {
       this.lightsaber.update(deltaTime);
     }
+    
+    // Apply simple bobbing when pursuing (walking)
+    if (this.state === EnemyState.PURSUING) {
+       this.bobTime += deltaTime * 6; // Adjust speed
+       const bobAmount = Math.sin(this.bobTime) * 0.04; // Adjust height
+       // Apply bobbing to the main group's position Y
+       this.position.y = 0.1 + bobAmount; // Base height + bob
+    } else {
+       // Smoothly return to base height when not walking
+       this.position.y = MathUtils.lerp(previousY, 0.1, 0.1);
+       this.bobTime = 0; // Reset bob timer
+    }
   }
   
   // New method to force more aggressive enemy behavior
@@ -213,10 +235,15 @@ export class Enemy extends Group {
       // Move toward player if not too close
       if (distanceToPlayer > this.tooCloseRange) {
         // Move toward player
-        const moveSpeed = this.speed * deltaTime;
-        this.position.addScaledVector(directionToPlayer, moveSpeed);
+        const moveSpeed = this.speed; // Base speed
+        this.position.addScaledVector(directionToPlayer, moveSpeed * deltaTime);
         this.state = EnemyState.PURSUING; // Set state to trigger walking animation
-        console.log(`Enemy moving toward player: ${this.position.x.toFixed(2)}, ${this.position.z.toFixed(2)}`);
+        if (this.debugMode) console.log(`Enemy moving toward player: ${this.position.x.toFixed(2)}, ${this.position.z.toFixed(2)}`);
+      } else {
+        // If close enough but not attacking, maybe idle or prepare to attack
+        if (this.state === EnemyState.PURSUING) {
+           this.state = EnemyState.IDLE; // Stop pursuing animation when close
+        }
       }
       
       // CRITICAL FIX: Perform attack when in range and cooldown is ready
@@ -644,8 +671,7 @@ export class Enemy extends Group {
 
   // Add missing getLightsaberPosition method to Enemy class
   getLightsaberPosition(): Vector3 {
-    const position = this.lightsaber ? this.lightsaber.getBladeTopPosition() : this.position.clone();
-    console.log("[ENEMY] Lightsaber position:", position);
+    const position = this.lightsaber.getBladeTopPosition();
     return position;
   }
 
@@ -830,5 +856,11 @@ export class Enemy extends Group {
     if (applied) {
         setTimeout(() => { this.hasAppliedDamage = false; }, 1000); // Reset after 1s (attack duration)
     }
+  }
+
+  public setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
+    if (this.lightsaber) this.lightsaber.setDebugMode(enabled); // Propagate if needed
+    // Toggle enemy-specific debug visuals
   }
 }

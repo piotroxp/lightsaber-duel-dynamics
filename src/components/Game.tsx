@@ -61,48 +61,35 @@ const Game: React.FC = () => {
       
       const onLoadComplete = () => {
         console.log("Loading complete callback triggered!");
-        // Add a small timeout to ensure UI updates properly
-        setTimeout(() => {
-          setGameState(prev => ({ 
-            ...prev, 
-            isLoading: false,
-            sceneReady: true
-          }));
-        }, 1000);
+        // No delay needed if scene init handles it
+        setGameState(prev => ({ 
+          ...prev, 
+          isLoading: false, 
+          loadingProgress: 1,
+          sceneReady: true // Mark scene as ready
+        }));
       };
       
+      // Clean up previous scene if exists
+      if (gameSceneRef.current) {
+        gameSceneRef.current.dispose();
+      }
+      
+      // Create new scene instance
+      gameSceneRef.current = new GameScene(
+        containerRef.current,
+        onLoadProgress,
+        onLoadComplete
+      );
+      
+      // Initialize the scene
       try {
-        // Remove any previous game scene
-        if (gameSceneRef.current) {
-          gameSceneRef.current.cleanup();
-          gameSceneRef.current = null;
-        }
-        
-        // Create the game scene
-        const gameScene = new GameScene(
-          containerRef.current,
-          onLoadProgress,
-          onLoadComplete
-        );
-        
-        // Store the game scene reference immediately
-        gameSceneRef.current = gameScene;
-        console.log("Game scene created, initializing...");
-        
-        // Initialize the game scene
-        await gameScene.initialize();
-        
-        // Force enable debug view to fix visibility issues
-        setTimeout(() => {
-          if (gameSceneRef.current) {
-            gameSceneRef.current.enableDebugView();
-            console.log("Debug view enabled in game initialization");
-          }
-        }, 500);
-        
+        await gameSceneRef.current.initialize();
+        // Pass initial debug state
+        gameSceneRef.current.setDebugMode(gameState.debugMode); 
         console.log("Game scene initialized successfully");
       } catch (error) {
-        console.error("Failed to initialize game:", error);
+        console.error("Error initializing game:", error);
         setGameState(prev => ({ 
           ...prev, 
           hasError: true, 
@@ -218,32 +205,19 @@ const Game: React.FC = () => {
   };
   
   const toggleDebugMode = () => {
-    setGameState(prev => ({
-      ...prev,
-      debugMode: !prev.debugMode
-    }));
-    
-    if (gameSceneRef.current) {
-      if (gameState.debugMode) {
-        gameSceneRef.current.disableDebugView();
-      } else {
-        gameSceneRef.current.enableDebugView();
-      }
-    }
+    setGameState(prev => {
+      const newDebugMode = !prev.debugMode;
+      // Update debug mode in the scene
+      gameSceneRef.current?.setDebugMode(newDebugMode); 
+      console.log(`Debug mode toggled: ${newDebugMode}`);
+      return { ...prev, debugMode: newDebugMode };
+    });
   };
   
   useEffect(() => {
     if (gameSceneRef.current && gameSceneRef.current.isInitialized) {
       console.log("Debugging game scene from Game component");
       gameSceneRef.current.debug();
-      
-      // Force a re-render of the scene if it's not visible
-      setTimeout(() => {
-        if (gameSceneRef.current) {
-          console.log("Forcing animation restart after delay");
-          gameSceneRef.current.animate();
-        }
-      }, 1000);
     }
   }, [gameState.isStarted]);
   

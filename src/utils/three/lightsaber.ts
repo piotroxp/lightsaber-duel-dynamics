@@ -71,6 +71,8 @@ export class Lightsaber extends Group {
   private hitboxRadius: number = 0.05;
   private hitTargets: Set<Object3D> = new Set();
 
+  private debugMode: boolean = true;
+
   constructor(options: LightsaberOptions = {}) {
     super();
     
@@ -372,6 +374,7 @@ export class Lightsaber extends Group {
   
   activate(): void {
     if (this.active) return;
+    if (this.debugMode) console.log("Lightsaber activating...");
     this.active = true;
     this.activationProgress = 0;
     this.blade.visible = true;
@@ -824,7 +827,7 @@ export class Lightsaber extends Group {
     this.bladeCore = new Mesh(coreGeo, coreMat);
     this.bladeCore.position.y = this.hiltLength + this.bladeLength / 2;
     this.bladeCore.renderOrder = 1; // Render core after main blade
-    this.add(this.bladeCore);
+    this.blade.add(this.bladeCore);
     
     // Create main blade (colored glow)
     const bladeGeo = new CylinderGeometry(0.03, 0.03, this.bladeLength, 16);
@@ -837,7 +840,7 @@ export class Lightsaber extends Group {
     this.bladeMesh = new Mesh(bladeGeo, bladeMat);
     this.bladeMesh.position.y = this.hiltLength + this.bladeLength / 2;
     this.bladeMesh.renderOrder = 0; // Render main blade first
-    this.add(this.bladeMesh);
+    this.blade.add(this.bladeMesh);
 
     // Create plasma core (innermost bright line) - Optional but adds detail
     const plasmaGeo = new CylinderGeometry(0.005, 0.005, this.bladeLength, 4);
@@ -850,7 +853,7 @@ export class Lightsaber extends Group {
     this.plasmaCore = new Mesh(plasmaGeo, plasmaMat);
     this.plasmaCore.position.y = this.hiltLength + this.bladeLength / 2;
     this.plasmaCore.renderOrder = 2; // Render plasma core last (on top)
-    this.add(this.plasmaCore);
+    this.blade.add(this.plasmaCore);
     
     // Make sure blade is initially invisible if not active
     this.blade.visible = this.active;
@@ -1323,5 +1326,9 @@ export class Lightsaber extends Group {
     
     // Start animation
     animate();
+  }
+
+  public setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
   }
 }

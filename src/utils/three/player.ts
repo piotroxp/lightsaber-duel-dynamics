@@ -122,76 +122,19 @@ export class Player extends Group {
     
     this.scene = scene;
     this.camera = camera;
+    this.currentHeight = this.normalHeight; // Initialize current height
     
-    this.createPlayerModel();
+    // Only create the model if needed (e.g., for third-person or multiplayer)
+    // this.createPlayerModel(); // We don't need to see our own model in FPS
     
-    // Create lightsaber immediately
-    this.createLightsaber();
+    // Initialize lightsaber
+    this.createLightsaber(); // Create saber early
     
-    // Set up key event listeners
-    document.addEventListener('keydown', (event) => {
-      switch (event.code) {
-        case 'KeyW': this.isForwardPressed = true; break;
-        case 'KeyS': this.isBackwardPressed = true; break;
-        case 'KeyA': this.isLeftPressed = true; break;
-        case 'KeyD': this.isRightPressed = true; break;
-        case 'Space': this.isJumpPressed = true; break;
-        case 'ShiftLeft': this.isBlockPressed = true; break;
-        case 'Digit1': 
-          console.log("Lightsaber toggle key pressed");
-          // Toggle lightsaber
-          if (this.lightsaber) {
-            console.log("Lightsaber exists, current state:", this.lightsaber.isActive());
-            if (this.lightsaber.isActive()) {
-              console.log("Deactivating lightsaber");
-              this.lightsaber.deactivate();
-              this.isLightsaberActive = false;
-            } else {
-              console.log("Activating lightsaber");
-              this.lightsaber.activate();
-              this.isLightsaberActive = true;
-              // Play activation sound
-              gameAudio.playSound('lightsaberOn', { volume: 0.7 });
-            }
-            console.log("Lightsaber toggled:", this.lightsaber.isActive());
-          } else {
-            console.log("No lightsaber found");
-          }
-          break;
-      }
-    });
+    // Store original camera position if needed for third-person toggle
+    this.originalCameraPosition.copy(camera.position);
 
-    // Add event listener to prevent Ctrl+W from closing the page
-    document.addEventListener('keydown', (event) => {
-      // Prevent Ctrl+W from closing the page
-      if (event.ctrlKey && (event.key === 'w' || event.key === 'W')) {
-        event.preventDefault();
-        event.stopPropagation();
-        console.log('Prevented browser close with Ctrl+W');
-        return false;
-      }
-    }, false);
-
-    // Add right-click blocking with proper positioning
-    document.addEventListener('contextmenu', (event) => {
-      // Prevent the context menu from appearing on right-click
-      event.preventDefault();
-      return false;
-    });
-
-    // Set up remaining key events and mouse events
-    this.setupKeyEvents();
-    
-    // Debug info
-    console.log("Player initialized with position:", this.position);
-    
-    // Initialize ground meshes
-    this.groundMeshes = [];
-    scene.traverse(object => {
-      if (object.userData?.isGround || object.name?.includes('ground') || object.name?.includes('floor')) {
-        this.groundMeshes.push(object);
-      }
-    });
+    // Setup input listeners at the VERY END of the constructor
+    this.setupControls(); 
   }
   
   private setupControls(): void {
@@ -364,71 +307,53 @@ export class Player extends Group {
   }
   
   update(deltaTime: number): void {
+    if (this.debugMode && this.frameCount % 120 === 0) { // Example conditional log
+       console.log("Player State:", this.state, "Position:", this.position);
+    }
     // Skip if dead
     if (this.state === PlayerState.DEAD) return;
     
     const previousY = this.camera.position.y; // Store previous camera Y for bobbing calculation
     
-    // Process inputs
-    this.handleInput(deltaTime);
+    // Handle Movement Input (apply forces/velocity changes)
+    this.handleMovementInput(deltaTime); // Renamed from handleInput
 
-    // Handle jumping and physics
-    this.handleJumping(deltaTime);
+    // Apply gravity and ground check
+    this.applyPhysics(deltaTime);
 
-    // Handle movement based on input directions
-    if (this.moveDirection.length() > 0) {
-      // Get camera direction for movement calculation
-      const cameraDirection = new Vector3();
-      this.camera.getWorldDirection(cameraDirection);
-      cameraDirection.y = 0; // Keep movement horizontal
-      cameraDirection.normalize();
-      
-      // Calculate right vector from camera direction
-      const rightVector = new Vector3();
-      rightVector.crossVectors(new Vector3(0, 1, 0), cameraDirection).normalize();
-      
-      // Create movement vector in world space
-      const moveVector = new Vector3();
-      
-      // IMPORTANT: Corrected directions
-      // Forward = camera direction (not inverted)
-      // Left/Right = perpendicular to camera direction (not inverted)
-      if (this.isForwardPressed) moveVector.add(cameraDirection);
-      if (this.isBackwardPressed) moveVector.sub(cameraDirection);
-      if (this.isLeftPressed) moveVector.add(rightVector);
-      if (this.isRightPressed) moveVector.sub(rightVector);
-      
-      // Apply movement if there is any
-      if (moveVector.length() > 0) {
-        moveVector.normalize().multiplyScalar(this.moveSpeed * deltaTime);
-        this.position.add(moveVector);
+    // Update player position based on velocity
+    this.position.addScaledVector(this.velocity, deltaTime);
+
+    // Update camera position (bobbing)
+    this.updateCameraBobbing(deltaTime, previousY);
+
+    // Handle Action Inputs (Attack/Block) - Process flags set by listeners
+    if (this.isAttackPressed) {
+      this.attack(); // attack() handles state checks and cooldowns
+      this.isAttackPressed = false; // Consume flag
+    } else if (this.isHeavyAttackPressed) {
+      this.heavyAttack(); // heavyAttack() handles state checks and cooldowns
+      this.isHeavyAttackPressed = false; // Consume flag
+    } else if (this.isBlockPressed) {
+      this.block(); // block() handles state checks
+    } else {
+      // If not attacking and block released, stop blocking
+      if (this.state === PlayerState.BLOCKING) {
+         this.stopBlocking();
       }
-      
+    }
+
+    // Update state based on movement
+    if (this.velocity.lengthSq() > 0.01 && this.state !== PlayerState.ATTACKING && this.state !== PlayerState.BLOCKING) {
       this.state = PlayerState.MOVING;
     } else if (this.state !== PlayerState.ATTACKING && this.state !== PlayerState.BLOCKING) {
       this.state = PlayerState.IDLE;
     }
 
-    // Add simple head bobbing when moving
-    if (this.state === PlayerState.MOVING) {
-       this.bobTime += deltaTime * 8; // Adjust speed of bobbing
-       const bobAmount = Math.sin(this.bobTime) * 0.03; // Adjust height of bobbing
-       this.camera.position.y = 1.8 + bobAmount; // Apply bobbing to camera's Y
-    } else {
-       // Smoothly return to normal height when idle
-       this.camera.position.y = MathUtils.lerp(previousY, 1.8, 0.1);
-       this.bobTime = 0; // Reset bob timer
-    }
-
-    // Debug movement
-    if (this.moveDirection.length() > 0) {
-      console.log(`Moving: x=${this.moveDirection.x}, z=${this.moveDirection.z}, position: ${this.position.x.toFixed(2)},${this.position.z.toFixed(2)}`);
-    }
-
     // Update lightsaber position and physics
     if (this.lightsaber) {
       // Update lightsaber swing animation if attacking
-      if (this.state === PlayerState.ATTACKING) {
+      if (this.isSwinging) { // Base animation on isSwinging flag set by attack()
         this.updateLightsaberSwing(deltaTime);
       } else if (this.state === PlayerState.BLOCKING) {
          // Keep saber in blocking pose (or update blocking animation)
@@ -448,82 +373,90 @@ export class Player extends Group {
       this.attackCooldown -= deltaTime;
     }
 
-    // Handle attack inputs
-    if (this.isAttackPressed) {
-      // Clear flag right away to prevent multiple attacks
-      this.isAttackPressed = false;
-      
-      if (this.state !== PlayerState.ATTACKING && this.lightsaber) {
-        console.log("Processing attack input");
-        this.attack();
-      }
-    }
-    
-    if (this.isHeavyAttackPressed) {
-      // Clear flag right away to prevent multiple attacks
-      this.isHeavyAttackPressed = false;
-      
-      if (this.state !== PlayerState.ATTACKING && this.lightsaber) {
-        console.log("Processing heavy attack input");
-        this.heavyAttack();
-      }
-    }
-
     // Debug output for lightsaber visibility
     if (this.lightsaber && this.frameCount % 120 === 0) {
       console.log("Lightsaber visible:", this.lightsaber.visible);
       console.log("Lightsaber position:", this.lightsaber.position);
       console.log("Is active:", this.lightsaber.isActive());
     }
+
+    this.frameCount++;
   }
   
-  private handleMovement(deltaTime: number): void {
-    if (this.state === PlayerState.STAGGERED) return;
-    
-    const direction = new Vector3();
+  private handleMovementInput(deltaTime: number): void {
     const cameraDirection = new Vector3();
-    
-    // Get camera direction
     this.camera.getWorldDirection(cameraDirection);
-    cameraDirection.y = 0; // Keep movement on horizontal plane
+    cameraDirection.y = 0; // Project onto XZ plane
     cameraDirection.normalize();
-    
-    // FIXED: Correctly calculate right vector with proper cross product order
-    const right = new Vector3();
-    right.crossVectors(cameraDirection, new Vector3(0, 1, 0)).normalize();
-    
-    // Apply movement inputs
-    if (this.isMovingForward) {
-      direction.add(cameraDirection);
+
+    const rightVector = new Vector3();
+    rightVector.crossVectors(this.camera.up, cameraDirection).normalize();
+
+    this.moveDirection.set(0, 0, 0); // Reset move direction each frame
+
+    if (this.isForwardPressed) this.moveDirection.add(cameraDirection);
+    if (this.isBackwardPressed) this.moveDirection.sub(cameraDirection);
+    if (this.isLeftPressed) this.moveDirection.sub(rightVector); // Corrected direction
+    if (this.isRightPressed) this.moveDirection.add(rightVector); // Corrected direction
+
+    // Apply movement impulse/velocity change (simplified example)
+    if (this.moveDirection.lengthSq() > 0) {
+       this.moveDirection.normalize();
+       // Apply force differently based on state (e.g., slower when attacking/blocking)
+       let currentMoveSpeed = this.moveSpeed;
+       if (this.state === PlayerState.ATTACKING || this.state === PlayerState.BLOCKING) {
+          currentMoveSpeed *= 0.4; // Slower movement during actions
+       }
+       // Directly modify velocity (you might use forces in a more complex physics setup)
+       this.velocity.x = this.moveDirection.x * currentMoveSpeed;
+       this.velocity.z = this.moveDirection.z * currentMoveSpeed;
+    } else {
+       // Apply damping/friction when no input
+       this.velocity.x *= 0.9; // Damping factor
+       this.velocity.z *= 0.9;
     }
-    if (this.isMovingBackward) {
-      direction.sub(cameraDirection);
-    }
-    if (this.isMovingRight) {
-      direction.add(right);
-    }
-    if (this.isMovingLeft) {
-      direction.sub(right);
-    }
-    
-    // Normalize and apply movement
-    if (direction.lengthSq() > 0) {
-      direction.normalize();
-      
-      // Move the camera
-      const moveAmount = this.moveSpeed * deltaTime;
-      this.camera.position.add(direction.multiplyScalar(moveAmount));
-      
-      // Limit the camera Y position to prevent flying/falling
-      this.camera.position.y = 1.7; // Eye level height
-      
-      this.state = PlayerState.MOVING;
-    } else if (this.state !== PlayerState.ATTACKING && this.state !== PlayerState.BLOCKING) {
-      this.state = PlayerState.IDLE;
+
+    // Handle Jump Input
+    if (this.isJumpPressed && this.isGrounded) {
+       this.velocity.y = this.jumpForce;
+       this.isGrounded = false; // No longer on ground after jumping
+       this.isJumpPressed = false; // Consume jump input
     }
   }
-  
+
+  private applyPhysics(deltaTime: number): void {
+     // Ground check (simple raycast down)
+     const groundRay = new Raycaster(this.position, new Vector3(0, -1, 0), 0, this.height * 0.6);
+     const groundIntersects = groundRay.intersectObjects(this.scene.children, true); // Check against scene objects
+     this.isGrounded = groundIntersects.length > 0;
+
+     if (this.isGrounded) {
+        // If on ground and falling, stop vertical velocity
+        if (this.velocity.y < 0) {
+           this.velocity.y = 0;
+           // Snap to ground precisely (optional, adjust based on ground check accuracy)
+           // this.position.y = groundIntersects[0].point.y; 
+        }
+     } else {
+        // Apply gravity if not grounded
+        this.velocity.y -= this.gravity * deltaTime;
+     }
+  }
+
+  private updateCameraBobbing(deltaTime: number, previousY: number): void {
+     if (this.state === PlayerState.MOVING && this.isGrounded) {
+        this.bobTime += deltaTime * 8; // Adjust speed of bobbing
+        const bobAmount = Math.sin(this.bobTime) * 0.03; // Adjust height of bobbing
+        this.camera.position.y = this.currentHeight + bobAmount; // Apply bobbing relative to current height
+     } else {
+        // Smoothly return to normal height when idle or airborne
+        this.camera.position.y = MathUtils.lerp(previousY, this.currentHeight, 0.1);
+        this.bobTime = 0; // Reset bob timer
+     }
+  }
+
   private attack(): void {
+    if (this.debugMode) console.log("Player light attack attempt");
     if (this.state === PlayerState.ATTACKING || 
         this.state === PlayerState.DEAD || 
         this.state === PlayerState.STAGGERED ||
@@ -551,6 +484,7 @@ export class Player extends Group {
     gameAudio.playSound('lightsaberSwing', { volume: 0.7 });
     
     // Reset state after attack duration (handled in updateLightsaberSwing now)
+    if (this.debugMode) console.log("Player light attack started");
   }
   
   private heavyAttack(): void {
@@ -1223,17 +1157,17 @@ export class Player extends Group {
       scene: this.scene // Pass scene reference if needed by Lightsaber
     });
     
-    // CRITICAL FIX: Add directly to camera for proper first-person view
-    this.camera.add(this.lightsaber);
+    // Add lightsaber to the player group initially, it will be positioned relative to camera later
+    this.add(this.lightsaber); 
     
-    // Position for proper FPS view - adjust position to be visible in front of camera
-    this.lightsaber.position.set(0.35, -0.3, -0.7); 
-    this.lightsaber.rotation.set(Math.PI / 10, -Math.PI / 8, Math.PI / 16); 
+    // Set initial relative position/rotation (will be updated dynamically)
+    this.lightsaber.position.copy(this.lightsaberOffset); 
+    this.lightsaber.rotation.set(Math.PI / 10, -Math.PI / 8, Math.PI / 16);
     
     // Force the lightsaber to be visible
     this.lightsaber.visible = true;
     
-    console.log("Lightsaber created and added to player camera at position:", this.lightsaber.position);
+    console.log("Lightsaber created and added to player group at relative position:", this.lightsaber.position);
     
     // IMMEDIATE ACTIVATION: Don't delay activation
     if (this.lightsaber) {
@@ -1396,16 +1330,27 @@ export class Player extends Group {
   private updateIdleSaberMovement(deltaTime: number): void {
     if (!this.lightsaber || !this.camera) return;
 
-    // Define the target position and rotation relative to the camera
-    const targetPosition = new Vector3(0.35, -0.3, -0.7); 
-    const targetRotation = new Euler(Math.PI / 10, -Math.PI / 8, Math.PI / 16);
-    const targetQuaternion = new Quaternion().setFromEuler(targetRotation);
+    // Define the target position and rotation *relative to the camera*
+    const targetLocalPosition = this.lightsaberOffset.clone();
+    const targetLocalRotation = new Euler(Math.PI / 10, -Math.PI / 8, Math.PI / 16);
+    const targetLocalQuaternion = new Quaternion().setFromEuler(targetLocalRotation);
+
+    // Convert target local camera coordinates to world coordinates
+    const targetWorldPosition = this.camera.localToWorld(targetLocalPosition.clone());
+    const targetWorldQuaternion = new Quaternion().multiplyQuaternions(this.camera.quaternion, targetLocalQuaternion);
 
     // Apply smoothing (lerp for position, slerp for rotation)
     const positionLerpFactor = 0.1; // Adjust for more/less lag
     const rotationSlerpFactor = 0.1; // Adjust for more/less lag
 
-    this.lightsaber.position.lerp(targetPosition, positionLerpFactor);
-    this.lightsaber.quaternion.slerp(targetQuaternion, rotationSlerpFactor);
+    // Interpolate the lightsaber's *world* position and rotation
+    this.lightsaber.position.lerp(targetWorldPosition, positionLerpFactor);
+    this.lightsaber.quaternion.slerp(targetWorldQuaternion, rotationSlerpFactor);
+  }
+
+  public setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
+    if (this.lightsaber) this.lightsaber.setDebugMode(enabled); // Propagate if needed
+    // Toggle any visual debug helpers specific to the player
   }
 }

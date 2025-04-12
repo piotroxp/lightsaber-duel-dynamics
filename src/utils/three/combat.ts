@@ -14,6 +14,7 @@ export class CombatSystem {
   private lastHitTime: number = 0;
   private camera: Camera | null = null;
   private attackCooldowns = new WeakMap<Enemy, number>();
+  private debugMode: boolean = true;
   
   constructor(scene: Scene, player: Player) {
     this.scene = scene;
@@ -36,7 +37,7 @@ export class CombatSystem {
   update(deltaTime: number): void {
     // Player attack debug
     if (this.player.isAttacking()) {
-      console.log("👊 PLAYER IS ATTACKING");
+       console.log("👊 PLAYER IS ATTACKING");
       
       for (const enemy of this.enemies) {
         if (!enemy.isAlive()) continue;
@@ -49,7 +50,7 @@ export class CombatSystem {
           const enemyBodyCenter = enemy.position.clone().add(new Vector3(0, 1, 0)); // Approx center mass
           const hitDistance = playerSaberTip.distanceTo(enemyBodyCenter);
           
-          console.log("⚔️ Player Swing - Saber Tip to Enemy Center:", hitDistance.toFixed(2));
+       console.log("⚔️ Player Swing - Saber Tip to Enemy Center:", hitDistance.toFixed(2));
           
           // More realistic hit range
           const hitRange = 1.5; // Adjust as needed
@@ -104,14 +105,14 @@ export class CombatSystem {
         const enemySaberTip = enemy.getLightsaberPosition();
         const distanceToEnemySaber = playerPos.distanceTo(enemySaberTip);
 
-        console.log("⚔️ Enemy Attack - Player to Enemy Saber:", distanceToEnemySaber.toFixed(2));
+       console.log("⚔️ Enemy Attack - Player to Enemy Saber:", distanceToEnemySaber.toFixed(2));
         
         // CRITICAL: Ensure enemy attacks land at reasonable distance
         const enemyHitRange = 1.8; // Adjust as needed
         if (distanceToEnemySaber < enemyHitRange && !enemy.hasAppliedDamageInCurrentAttack()) { // Add hasAppliedDamage flag to Enemy
           // Check if player is blocking
           if (this.player.isBlocking()) {
-            console.log("🛡️ PLAYER BLOCKED ENEMY ATTACK!");
+       console.log("🛡️ PLAYER BLOCKED ENEMY ATTACK!");
             // Trigger clash effect at block point
             const blockPoint = this.player.getLightsaberPosition(); // Approx block point
             createSaberClashEffect(this.scene, blockPoint, '#ffffff');
@@ -119,18 +120,18 @@ export class CombatSystem {
             // Optional: Apply stagger to enemy
             enemy.applyStagger(0.5); 
           } else {
-            console.log("🎯 PLAYER HIT BY ENEMY!");
+       console.log("🎯 PLAYER HIT BY ENEMY!");
             
             // Debug player health before damage
-            console.log("Player health BEFORE damage:", this.player.getHealth());
+       console.log("Player health BEFORE damage:", this.player.getHealth());
             
             // CRITICAL: Ensure enemy damage is applied properly
             const damage = enemy.getAttackDamage();
-            console.log(`Enemy dealing ${damage} damage to player`);
+       console.log(`Enemy dealing ${damage} damage to player`);
             this.player.takeDamage(damage);
             
             // Debug player health after damage
-            console.log("Player health AFTER damage:", this.player.getHealth());
+       console.log("Player health AFTER damage:", this.player.getHealth());
             
             // Mark damage applied for this enemy attack
             enemy.setDamageAppliedInCurrentAttack(true);
@@ -514,5 +515,9 @@ export class CombatSystem {
         this.createHitEffect(enemy.position);
       }
     });
+  }
+
+  public setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
   }
 }

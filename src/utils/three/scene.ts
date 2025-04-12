@@ -44,6 +44,8 @@ export class GameScene {
   private onLoadProgress: (progress: number) => void;
   private onLoadComplete: () => void;
   private backgroundMusic: any = null;
+  private debugMode: boolean = true; // Default to true
+  private frameCount: number = 0;
   
   constructor(
     container: HTMLElement,
@@ -76,9 +78,19 @@ export class GameScene {
     
     // Create player (needs camera reference)
     this.player = new Player(this.scene, this.camera);
+    this.scene.add(this.player);
+    
+    // Pass debug mode to player
+    this.player.setDebugMode(this.debugMode);
+    
+    // Position player slightly above ground
+    this.player.position.set(0, 0.1, 0); // Start slightly above ground plane y=0
     
     // Create combat system (needs player and scene references)
     this.combatSystem = new CombatSystem(this.scene, this.player);
+    console.log('Checking combatSystem:', this.combatSystem, typeof this.combatSystem.setDebugMode);
+    this.combatSystem.setDebugMode(this.debugMode);
+    this.combatSystem.setCamera(this.camera); // Pass camera for potential use
     
     // Setup event listeners
     this.setupEventListeners();
@@ -118,14 +130,16 @@ export class GameScene {
       this.isInitialized = true;
       console.log("Game initialization complete");
       
-      // Start animation loop
-      this.animate();
-      console.log("Animation loop started");
-      
       // Trigger complete callback
       if (this.onLoadComplete) {
         this.onLoadComplete();
       }
+
+      // --- TEMPORARY DEBUG: Start animation immediately after init ---
+      console.log("!!! DEBUG: Forcing start() after initialize !!!");
+      this.start(); 
+      // --- END TEMPORARY DEBUG ---
+
     } catch (error) {
       console.error("Error initializing game:", error);
       throw error;
@@ -141,24 +155,14 @@ export class GameScene {
       1000 // Far clipping plane
     );
     
-    // Position camera for a first-person view
-    this.camera.position.set(0, 1.8, 0); // Set at player eye level
-    console.log("Camera positioned at:", this.camera.position);
+    // Set initial relative position (will be overridden when added to player)
+    this.camera.position.set(0, 0, 0); 
+    console.log("Camera created");
     
     // Initialize pointer lock controls
     this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
     
-    // IMPORTANT: Make camera a child of player to restore first-person view
-    this.controls.addEventListener('lock', () => {
-      // When controls lock, ensure camera is properly positioned
-      if (this.player) {
-        this.player.add(this.camera);
-        // Position camera at head height
-        this.camera.position.set(0, 0.9, 0);
-        this.camera.rotation.set(0, 0, 0);
-        console.log("First-person camera attached to player");
-      }
-    });
+    // Event listeners for lock/unlock are handled in setupEventListeners
   }
   
   private setupLighting(): void {
@@ -332,30 +336,73 @@ export class GameScene {
   }
   
   public animate(): void {
-    // Skip if not initialized
-    if (!this.isInitialized) return;
-    
-    this.isAnimating = true;
-    
+    // Log every time animate is entered, before the isAnimating check
+    console.log(`--- animate() entered | isAnimating: ${this.isAnimating} | frame: ${this.frameCount} ---`); 
+    if (!this.isAnimating) return; 
+    requestAnimationFrame(this.animate.bind(this)); 
+
     const deltaTime = this.clock.getDelta();
-    
-    // Update player
-    this.player.update(deltaTime);
-    
-    // Update enemies
-    for (const enemy of this.enemies) {
-      enemy.update(deltaTime, this.player.getPosition(), this.player.getDirection());
+
+    // Log periodically to confirm loop is running
+    if (this.frameCount === undefined) this.frameCount = 0; 
+    if (this.frameCount % 120 === 0 && this.debugMode) { 
+       console.log(`Animate loop running... Frame: ${this.frameCount}, Delta: ${deltaTime.toFixed(4)}`);
     }
-    
-    // CRITICAL FIX: Make sure to call combat system update
-    this.combatSystem.update(deltaTime);
-    
-    // Render scene
-    this.renderer.render(this.scene, this.camera);
-    
-    // Continue animation loop
-    if (this.isAnimating) {
-      requestAnimationFrame(this.animate.bind(this));
+    this.frameCount++;
+
+    try {
+      // Update game objects
+      if (this.player) {
+        try {
+          this.player.update(deltaTime);
+        } catch (playerUpdateError) {
+          console.error("Error during player.update:", playerUpdateError);
+          this.isAnimating = false; // Stop on error
+          return;
+        }
+      }
+      
+      this.enemies.forEach(enemy => {
+        if (enemy && this.player) {
+          try {
+            enemy.update(deltaTime, this.player.position, this.player.getWorldDirection(new Vector3()));
+          } catch (enemyUpdateError) {
+            console.error(`Error during enemy.update (ID: ${enemy.id}):`, enemyUpdateError);
+            this.isAnimating = false; // Stop on error
+            // Note: returning here only exits the forEach callback, not animate()
+            // We set isAnimating = false, so the next frame check will stop it.
+          }
+        }
+      });
+      // Check isAnimating again in case enemy update stopped it
+      if (!this.isAnimating) return; 
+
+      if (this.combatSystem) {
+        try {
+          this.combatSystem.update(deltaTime);
+        } catch (combatUpdateError) {
+          console.error("Error during combatSystem.update:", combatUpdateError);
+          this.isAnimating = false; // Stop on error
+          return;
+        }
+      }
+    } catch (updatePhaseError) {
+      // Catch any unexpected errors during the update phase logic itself
+      console.error("Error during main update phase:", updatePhaseError);
+      this.isAnimating = false;
+      return;
+    }
+
+    // Render the scene
+    try {
+      this.renderer.render(this.scene, this.camera);
+      // Log successful render periodically
+      if (this.frameCount % 120 === 1 && this.debugMode) {
+         console.log("Scene rendered successfully.");
+      }
+    } catch (renderError) {
+      console.error("Error during render:", renderError);
+      this.isAnimating = false; // Stop animation on error
     }
   }
   
@@ -535,14 +582,16 @@ export class GameScene {
     console.log("- isInitialized:", this.isInitialized);
     console.log("- isAnimating:", this.isAnimating);
     console.log("- container:", this.container);
-    console.log("- camera position:", this.camera?.position);
-    console.log("- scene children:", this.scene?.children.length);
+    console.log("- camera position:", this.camera ? this.camera.getWorldPosition(new Vector3()) : 'N/A');
+    console.log("- scene children:", this.scene ? this.scene.children.length : 'N/A');
     console.log("- renderer:", this.renderer);
-    
-    // Check if renderer canvas is in DOM
     if (this.renderer) {
-      const canvas = this.renderer.domElement;
-      console.log("- canvas in DOM:", document.body.contains(canvas));
+      console.log("- canvas element:", this.renderer.domElement);
+      console.log("- canvas size:", this.renderer.domElement.width, "x", this.renderer.domElement.height);
+      console.log("- canvas style size:", this.renderer.domElement.style.width, "x", this.renderer.domElement.style.height);
+      console.log("- canvas in DOM:", document.body.contains(this.renderer.domElement));
+    } else {
+      console.log("- renderer not available for canvas check");
     }
   }
   
@@ -566,6 +615,24 @@ export class GameScene {
     this.createModernHealthDisplay();
     
     this.addDebugElements(true);
+
+    // Add basic lighting
+    const ambientLight = new AmbientLight(0xffffff, 0.5); // Soft white light
+    this.scene.add(ambientLight);
+
+    const directionalLight = new DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(5, 10, 7.5);
+    directionalLight.castShadow = true; // Enable shadows
+    // Configure shadow properties (optional but good)
+    directionalLight.shadow.mapSize.width = 1024;
+    directionalLight.shadow.mapSize.height = 1024;
+    directionalLight.shadow.camera.near = 0.5;
+    directionalLight.shadow.camera.far = 50;
+    this.scene.add(directionalLight);
+    console.log("Basic lighting added to scene");
+
+    // Add ground plane (optional but helpful for orientation)
+    const groundGeo = new PlaneGeometry(100, 100);
   }
   
   private createModernHealthDisplay(): void {
@@ -756,12 +823,11 @@ export class GameScene {
   private setupPlayer(): void {
     console.log("Setting up player");
     
-    // Position player properly
-    this.player.position.set(0, 1, 0);
-    
     // Restore first-person view by making camera a child of player
-    this.camera.position.set(0, 1.8, 0); // Position at eye level
+    // Set camera position *before* adding it to the player
+    this.camera.position.set(0, 1.7, 0); // Eye level relative to player base (0,0,0)
     this.player.add(this.camera);
+    console.log("Camera added as child of player in setupPlayer");
     
     // Activate the lightsaber if needed
     try {
@@ -774,7 +840,7 @@ export class GameScene {
     
     // Additional player setup if needed
     console.log("Player positioned at:", this.player.position);
-    console.log("First-person camera attached at:", this.camera.position);
+    console.log("Camera world position after adding to player:", this.camera.getWorldPosition(new Vector3()));
   }
 
   // Add a method to update enemy health UI
@@ -819,5 +885,36 @@ export class GameScene {
         fillElement.style.backgroundColor = '#ff9933'; // Yellow-orange
       }
     }
+  }
+
+  // Method to update debug mode
+  setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
+    // Propagate to relevant objects
+    if (this.player) this.player.setDebugMode(enabled);
+    if (this.combatSystem) this.combatSystem.setDebugMode(enabled);
+    this.enemies.forEach(enemy => enemy.setDebugMode(enabled));
+    // Optionally toggle helpers
+    const axesHelper = this.scene.getObjectByName('axesHelper');
+    if (axesHelper) axesHelper.visible = enabled;
+    const gridHelper = this.scene.getObjectByName('gridHelper');
+    if (gridHelper) gridHelper.visible = enabled;
+  }
+
+  // Method to start the game loop and music
+  start(): void {
+    if (!this.isInitialized) {
+      console.error("Cannot start game: Scene not initialized.");
+      return;
+    }
+    if (this.isAnimating) {
+      console.log("Animation already running.");
+      return; // Don't start if already running
+    }
+    
+    console.log("Starting game elements...");
+    this.isAnimating = true;
+    this.clock.start(); // Ensure the clock is running before the first frame
+    this.animate(); // <<< START the animation loop here
   }
 }
