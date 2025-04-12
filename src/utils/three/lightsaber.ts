@@ -294,12 +294,12 @@ export class Lightsaber extends Group {
       // Set proper scale for all blade components
       this.bladeMesh.scale.set(1, 1, 1);
       this.bladeCore.scale.set(1, 1, 1);
-      this.plasmaCore.scale.set(1, 1, 1);
+      if (this.plasmaCore) this.plasmaCore.scale.set(1, 1, 1);
       
       // Set proper position for all blade components
       this.bladeMesh.position.y = this.hiltLength + this.bladeLength / 2;
       this.bladeCore.position.y = this.hiltLength + this.bladeLength / 2;
-      this.plasmaCore.position.y = this.hiltLength + this.bladeLength / 2;
+      if (this.plasmaCore) this.plasmaCore.position.y = this.hiltLength + this.bladeLength / 2;
       
       // Play activation sound
       gameAudio.playSound('lightsaberOn', { volume: 0.7 });
@@ -308,7 +308,7 @@ export class Lightsaber extends Group {
       // Apply immediate partial glow to make it visible
       (this.bladeMesh.material as MeshBasicMaterial).opacity = 0.4;
       (this.bladeCore.material as MeshBasicMaterial).opacity = 0.6;
-      (this.plasmaCore.material as MeshBasicMaterial).opacity = 0.8;
+      if (this.plasmaCore) (this.plasmaCore.material as MeshBasicMaterial).opacity = 0.8;
       this.bladeLight.intensity = 1.0 * this.glowIntensity;
       // Enhanced active blade visuals
       const bladeMaterial = this.bladeMesh.material as MeshBasicMaterial;
@@ -346,7 +346,7 @@ export class Lightsaber extends Group {
       if (this.plasmaCore && this.plasmaCore.material instanceof MeshBasicMaterial) {
         // Always make plasma core pure white
         this.plasmaCore.material.color.setRGB(1.0, 1.0, 1.0);
-        this.plasmaCore.material.opacity = 1.0;
+        this.plasmaCore.material.opacity = 0.9; // Slightly less opaque to blend better
         
         // Add rapid pulsing to the plasma core with MUCH higher frequency
         const plasmaPulse = Math.sin(Date.now() * 0.1) * 0.5 + 0.8;
@@ -813,41 +813,44 @@ export class Lightsaber extends Group {
     this.blade.position.y = this.hiltLength;
     this.add(this.blade);
     
-    // Create outer layer (translucent colored glow)
-    const bladeGeometry = new CylinderGeometry(0.05, 0.045, this.bladeLength, 16);
-    const bladeMaterial = new MeshBasicMaterial({
-      color: this.bladeColor,
-      transparent: true,
-      opacity: 0.4,
-      side: DoubleSide,
-      blending: AdditiveBlending
-    });
-    this.bladeMesh = new Mesh(bladeGeometry, bladeMaterial);
-    this.bladeMesh.position.y = this.bladeLength / 2;
-    this.blade.add(this.bladeMesh);
-    
-    // Create middle layer (pulsating core)
-    const middleGeometry = new CylinderGeometry(0.03, 0.025, this.bladeLength, 12);
-    const middleMaterial = new MeshBasicMaterial({
-      color: new Color(this.bladeColor).lerp(new Color(0xffffff), 0.5),
-      transparent: true,
-      opacity: 0.7,
-      blending: AdditiveBlending
-    });
-    this.bladeCore = new Mesh(middleGeometry, middleMaterial);
-    this.bladeCore.position.y = this.bladeLength / 2;
-    this.blade.add(this.bladeCore);
-    
-    // Create inner core (very bright white center)
-    const coreGeometry = new CylinderGeometry(0.01, 0.008, this.bladeLength, 8);
-    const coreMaterial = new MeshBasicMaterial({
+    // Create blade core (inner white part)
+    const coreGeo = new CylinderGeometry(0.015, 0.015, this.bladeLength, 8);
+    const coreMat = new MeshBasicMaterial({ 
       color: 0xffffff,
-      transparent: true,
-      opacity: 1.0
+      transparent: false, // Core should be solid white
+      opacity: 1.0,
+      blending: AdditiveBlending // Helps it glow through
     });
-    this.plasmaCore = new Mesh(coreGeometry, coreMaterial);
-    this.plasmaCore.position.y = this.bladeLength / 2;
-    this.blade.add(this.plasmaCore);
+    this.bladeCore = new Mesh(coreGeo, coreMat);
+    this.bladeCore.position.y = this.hiltLength + this.bladeLength / 2;
+    this.bladeCore.renderOrder = 1; // Render core after main blade
+    this.add(this.bladeCore);
+    
+    // Create main blade (colored glow)
+    const bladeGeo = new CylinderGeometry(0.03, 0.03, this.bladeLength, 16);
+    const bladeMat = new MeshBasicMaterial({ 
+      color: this.bladeColor, 
+      transparent: true, 
+      opacity: 0.6, // Slightly more transparent outer glow
+      blending: AdditiveBlending 
+    });
+    this.bladeMesh = new Mesh(bladeGeo, bladeMat);
+    this.bladeMesh.position.y = this.hiltLength + this.bladeLength / 2;
+    this.bladeMesh.renderOrder = 0; // Render main blade first
+    this.add(this.bladeMesh);
+
+    // Create plasma core (innermost bright line) - Optional but adds detail
+    const plasmaGeo = new CylinderGeometry(0.005, 0.005, this.bladeLength, 4);
+    const plasmaMat = new MeshBasicMaterial({ 
+      color: 0xffffff, 
+      transparent: false, 
+      opacity: 1.0,
+      blending: AdditiveBlending 
+    });
+    this.plasmaCore = new Mesh(plasmaGeo, plasmaMat);
+    this.plasmaCore.position.y = this.hiltLength + this.bladeLength / 2;
+    this.plasmaCore.renderOrder = 2; // Render plasma core last (on top)
+    this.add(this.plasmaCore);
     
     // Make sure blade is initially invisible if not active
     this.blade.visible = this.active;

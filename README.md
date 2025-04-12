@@ -1,4 +1,4 @@
-# Lightsaber Combat
+# Plasma Blade Combat
 
 ## Project info
 

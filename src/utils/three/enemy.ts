@@ -186,6 +186,7 @@ export class Enemy extends Group {
     // CRITICAL FIX: Force enemy to see the player
     if (!playerPosition) {
       console.error("No player position provided to enemy");
+      this.state = EnemyState.IDLE; // Go idle if no player data
       return;
     }
     
@@ -214,17 +215,21 @@ export class Enemy extends Group {
         // Move toward player
         const moveSpeed = this.speed * deltaTime;
         this.position.addScaledVector(directionToPlayer, moveSpeed);
+        this.state = EnemyState.PURSUING; // Set state to trigger walking animation
         console.log(`Enemy moving toward player: ${this.position.x.toFixed(2)}, ${this.position.z.toFixed(2)}`);
       }
       
       // CRITICAL FIX: Perform attack when in range and cooldown is ready
       if (distanceToPlayer < this.attackRange && this.attackCooldown <= 0) {
         console.log("Enemy initiating attack!");
-        this.attack();
-        // Set a longer cooldown to give player chance to react
-        this.attackCooldown = 2.0;
+        this.attack(); // Attack handles setting ATTACKING state
       }
     } else {
+      // If player is out of range and not attacking/blocking/staggered, go idle
+      if (this.state !== EnemyState.ATTACKING && this.state !== EnemyState.BLOCKING && this.state !== EnemyState.STAGGERED) {
+        this.state = EnemyState.IDLE; 
+      }
+
       // Wander randomly when player is out of range
       this.wanderTimer += deltaTime;
       
@@ -261,13 +266,13 @@ export class Enemy extends Group {
   attack(): void {
     console.log("Enemy attack triggered!");
     
-    // Skip if dead
-    if (this.state === EnemyState.DEAD) return;
+    // Skip if dead or already attacking or cooling down
+    if (this.state === EnemyState.DEAD || this.state === EnemyState.ATTACKING || this.attackCooldown > 0) return;
     
     // Set state and timer
     this.state = EnemyState.ATTACKING;
     this.attackTimer = 0;
-    this.hasAppliedDamage = false;
+    this.setDamageAppliedInCurrentAttack(false); // Reset damage flag for new attack
     this.lastAttackTime = performance.now() / 1000;
     
     // Calculate direction to target
@@ -279,19 +284,17 @@ export class Enemy extends Group {
     attackDirection.y = 0;
     attackDirection.normalize();
     
-    // Trigger lightsaber swing physics
+    // Trigger lightsaber swing physics/animation
     if (this.lightsaber) {
-      // Ensure lightsaber is active
-      if (!this.lightsaber.isActive()) {
-        this.lightsaber.activate();
-      }
-      
-      // Trigger swing with attack direction
-      this.lightsaber.triggerSwing(attackDirection);
+      // Use swingAt for better control over enemy swing direction
+      this.lightsaber.swingAt(0, attackDirection); // 0 for standard swing type
     }
     
-    // Play attack sound
-    gameAudio.playSound('lightsaberSwing', { volume: 0.6, detune: -300 }); // Lower pitch for enemy
+    // Play swing sound
+    gameAudio.playSound('lightsaberSwing', { volume: 0.6, detune: -100 });
+    
+    // Set cooldown after initiating attack
+    this.attackCooldown = 1.5 + Math.random() * 1.0; // Cooldown between 1.5s and 2.5s
   }
   
   takeDamage(amount: number, attackerPosition: Vector3 = new Vector3()): void {
@@ -429,7 +432,7 @@ export class Enemy extends Group {
   }
   
   isAttacking(): boolean {
-    return this.attacking;
+    return this.state === EnemyState.ATTACKING;
   }
   
   isBlocking(): boolean {
@@ -665,6 +668,7 @@ export class Enemy extends Group {
     this.position.set(0, 0, -5); // Fixed spawn position
     this.rotation.set(0, Math.PI, 0);
     this.clearDamageVisuals();
+    this.lastRespawnTime = performance.now() / 1000; // Record respawn time
     
     // Dispatch proper event
     const event = new CustomEvent('enemyRespawned', {
@@ -739,7 +743,7 @@ export class Enemy extends Group {
   }
 
   getLastRespawnTime(): number {
-    return this.lastRespawnTime;
+    return this.lastRespawnTime || 0;
   }
 
   // Add a safe method for damage visual feedback
@@ -814,5 +818,17 @@ export class Enemy extends Group {
   // Add attack cooldown setter
   public setAttackCooldown(cooldown: number): void {
     this.attackCooldown = cooldown;
+  }
+
+  public hasAppliedDamageInCurrentAttack(): boolean {
+    return this.hasAppliedDamage;
+  }
+
+  public setDamageAppliedInCurrentAttack(applied: boolean): void {
+    this.hasAppliedDamage = applied;
+    // Reset automatically after attack duration if needed
+    if (applied) {
+        setTimeout(() => { this.hasAppliedDamage = false; }, 1000); // Reset after 1s (attack duration)
+    }
   }
 }

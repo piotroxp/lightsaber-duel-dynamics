@@ -41,41 +41,50 @@ export class CombatSystem {
       for (const enemy of this.enemies) {
         if (!enemy.isAlive()) continue;
         
-        // SIMPLIFIED: Use reliable hit detection with fixed distance
-        const playerPos = this.player.getPosition();
-        const hitDistance = enemy.position.distanceTo(playerPos);
-        
-        console.log("⚔️ Distance to enemy:", hitDistance.toFixed(2));
-        
-        // Very generous hit detection
-        if (hitDistance < 3.0) {
-          console.log("🎯 DIRECT HIT DETECTED!");
+        // REFINED HIT DETECTION: Only check during the swing animation
+        const swingProgress = this.player.getSwingProgress(); // Need to add this method to Player
+        // Check hit only during the middle part of the swing (e.g., 20% to 80%)
+        if (swingProgress > 0.2 && swingProgress < 0.8) {
+          const playerSaberTip = this.player.getLightsaberPosition(); // Position of the saber tip
+          const enemyBodyCenter = enemy.position.clone().add(new Vector3(0, 1, 0)); // Approx center mass
+          const hitDistance = playerSaberTip.distanceTo(enemyBodyCenter);
           
-          // Debug BEFORE damage
-          console.log("Enemy health BEFORE damage:", enemy.getHealth());
+          console.log("⚔️ Player Swing - Saber Tip to Enemy Center:", hitDistance.toFixed(2));
           
-          // CRITICAL: Reduce damage to require at least 5 hits
-          enemy.takeDamage(10);
-          
-          // Debug AFTER damage
-          console.log("Enemy health AFTER damage:", enemy.getHealth());
-          
-          // Visuals and audio
-          createHitEffect(this.scene, enemy.position.clone().add(new Vector3(0, 1.2, 0)), '#ff0000');
-          gameAudio.playSound('enemyHit', { volume: 1.0 });
-          
-          // Add cooldown to prevent multiple hits in one swing
-          this.lastHitTime = performance.now() / 1000;
-          
-          // Mark that we've applied damage for this attack
-          this.player.setDamageAppliedInCurrentAttack(true);
-          
-          // Reset damage flag after a delay
-          setTimeout(() => {
-            this.player.setDamageAppliedInCurrentAttack(false);
-          }, 800);
-          
-          break;
+          // More realistic hit range
+          const hitRange = 1.5; // Adjust as needed
+
+          if (hitDistance < hitRange && !this.player.hasAppliedDamageInCurrentAttack()) {
+            console.log("🎯 DIRECT HIT DETECTED!");
+            
+            // Debug BEFORE damage
+            console.log("Enemy health BEFORE damage:", enemy.getHealth());
+            
+            // CRITICAL: Reduce damage to require at least 5 hits
+            // Reduced damage based on attack type
+            const damage = this.player.getCurrentAttackType() === 'heavy' ? 15 : 8; 
+            enemy.takeDamage(damage);
+            
+            // Debug AFTER damage
+            console.log("Enemy health AFTER damage:", enemy.getHealth());
+            
+            // Visuals and audio
+            createHitEffect(this.scene, enemy.position.clone().add(new Vector3(0, 1.2, 0)), '#ff0000');
+            gameAudio.playSound('enemyHit', { volume: 1.0 });
+            
+            // Add cooldown to prevent multiple hits in one swing
+            this.lastHitTime = performance.now() / 1000;
+            
+            // Mark that we've applied damage for this attack
+            this.player.setDamageAppliedInCurrentAttack(true);
+            
+            // Reset damage flag after a delay
+            setTimeout(() => {
+              this.player.setDamageAppliedInCurrentAttack(false);
+            }, 800);
+            
+            break;
+          }
         }
       }
     }
@@ -91,31 +100,50 @@ export class CombatSystem {
         const playerPos = this.player.getPosition();
         const hitDistance = playerPos.distanceTo(enemy.position);
         
-        console.log("⚔️ Distance to player:", hitDistance.toFixed(2));
+        // Get enemy saber position for more accuracy
+        const enemySaberTip = enemy.getLightsaberPosition();
+        const distanceToEnemySaber = playerPos.distanceTo(enemySaberTip);
+
+        console.log("⚔️ Enemy Attack - Player to Enemy Saber:", distanceToEnemySaber.toFixed(2));
         
         // CRITICAL: Ensure enemy attacks land at reasonable distance
-        if (hitDistance < 3.0) {
-          console.log("🎯 PLAYER HIT BY ENEMY!");
-          
-          // Debug player health before damage
-          console.log("Player health BEFORE damage:", this.player.getHealth());
-          
-          // CRITICAL: Ensure enemy damage is applied properly
-          const damage = enemy.getAttackDamage();
-          console.log(`Enemy dealing ${damage} damage to player`);
-          this.player.takeDamage(damage);
-          
-          // Debug player health after damage
-          console.log("Player health AFTER damage:", this.player.getHealth());
-          
-          // Visual and audio feedback
-          createHitEffect(this.scene, playerPos.clone().add(new Vector3(0, 1.2, 0)), '#ff0000');
-          gameAudio.playSound('playerHit', { volume: 1.0 });
-          this.applyCameraShake(0.4);
-          
-          // Add cooldown to prevent multiple hits
-          enemy.setAttackCooldown(1.5);
-          break;
+        const enemyHitRange = 1.8; // Adjust as needed
+        if (distanceToEnemySaber < enemyHitRange && !enemy.hasAppliedDamageInCurrentAttack()) { // Add hasAppliedDamage flag to Enemy
+          // Check if player is blocking
+          if (this.player.isBlocking()) {
+            console.log("🛡️ PLAYER BLOCKED ENEMY ATTACK!");
+            // Trigger clash effect at block point
+            const blockPoint = this.player.getLightsaberPosition(); // Approx block point
+            createSaberClashEffect(this.scene, blockPoint, '#ffffff');
+            gameAudio.playSound('lightsaberClash', { volume: 0.9 });
+            // Optional: Apply stagger to enemy
+            enemy.applyStagger(0.5); 
+          } else {
+            console.log("🎯 PLAYER HIT BY ENEMY!");
+            
+            // Debug player health before damage
+            console.log("Player health BEFORE damage:", this.player.getHealth());
+            
+            // CRITICAL: Ensure enemy damage is applied properly
+            const damage = enemy.getAttackDamage();
+            console.log(`Enemy dealing ${damage} damage to player`);
+            this.player.takeDamage(damage);
+            
+            // Debug player health after damage
+            console.log("Player health AFTER damage:", this.player.getHealth());
+            
+            // Mark damage applied for this enemy attack
+            enemy.setDamageAppliedInCurrentAttack(true);
+            
+            // Visual and audio feedback
+            createHitEffect(this.scene, playerPos.clone().add(new Vector3(0, 1.2, 0)), '#ff0000');
+            gameAudio.playSound('playerHit', { volume: 1.0 });
+            this.applyCameraShake(0.4);
+            
+            // Add cooldown to prevent multiple hits
+            enemy.setAttackCooldown(1.5);
+            break;
+          }
         }
       }
     }
