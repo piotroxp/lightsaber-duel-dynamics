@@ -975,10 +975,21 @@ export class Player extends Group {
     this.state = PlayerState.DEAD;
     this.velocity.set(0, 0, 0); // Stop all movement
     
+    // Reset input flags immediately to prevent persisted inputs
+    this.isForwardPressed = false;
+    this.isBackwardPressed = false;
+    this.isLeftPressed = false;
+    this.isRightPressed = false;
+    this.isJumpPressed = false;
+    this.isBlockPressed = false;
+    this.isAttackPressed = false;
+    this.isHeavyAttackPressed = false;
+    
     // Dispatch died event
     this.dispatchEvent({ type: 'died' });
     
     // Schedule respawn after delay
+    console.log("Scheduling respawn in 2 seconds");
     setTimeout(() => this.respawn(), 2000);
   }
 
@@ -986,19 +997,16 @@ export class Player extends Group {
    * Respawn the player after death
    */
   public respawn(): void {
-    // Force reset player state
-    this.state = PlayerState.IDLE;
+    console.log("Starting player respawn...");
     
-    console.log("Respawning player...");
-    
-    // Reset position and physics
+    // Move player to spawn position
     this.position.set(0, 0, 0);
     this.velocity.set(0, 0, 0);
     
-    // Reset health
+    // Restore player health
     this.health = this.maxHealth;
     
-    // Reset all input flags to prevent stuck movement
+    // Explicitly reset ALL flags and states
     this.isForwardPressed = false;
     this.isBackwardPressed = false;
     this.isLeftPressed = false;
@@ -1008,32 +1016,37 @@ export class Player extends Group {
     this.isAttackPressed = false;
     this.isHeavyAttackPressed = false;
     this.isSwinging = false;
-    
-    // Reset physics flags
     this.isGrounded = true;
     this.isJumping = false;
+    this.damageAppliedInCurrentAttack = false;
     
-    // Reset camera position
+    // IMPORTANT: Reset the state to IDLE to allow movement
+    this.state = PlayerState.IDLE;
+    
+    // Reset camera position to default
     if (this.camera) {
       this.camera.position.set(0, 1.8, 0);
     }
     
-    // Reset lightsaber
+    // Reset and position lightsaber
     if (this.lightsaber) {
-      // Position lightsaber properly
       this.lightsaber.position.set(0, -0.3, -0.7);
       this.lightsaber.rotation.set(Math.PI / 20, 0, 0);
       this.lightsaber.activate();
     }
     
-    // Dispatch events
+    // Dispatch events for UI updates
     this.dispatchEvent({ 
       type: 'healthChanged', 
       detail: { health: this.maxHealth, maxHealth: this.maxHealth } 
     });
     this.dispatchEvent({ type: 'respawned' });
     
-    console.log("Player respawned - State:", this.state);
+    // Also notify any enemies to reset their targeting
+    const resetEvent = new CustomEvent('playerRespawned', { detail: { player: this } });
+    document.dispatchEvent(resetEvent);
+    
+    console.log("Player respawn complete - State:", this.state, "Position:", this.position.toArray());
     
     // Store last respawn time
     this.lastRespawnTime = performance.now();
