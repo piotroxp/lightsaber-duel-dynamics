@@ -372,13 +372,23 @@ export class Lightsaber extends Group {
     }
   }
   
-  activate(): void {
-    if (this.active) return;
-    if (this.debugMode) console.log("Lightsaber activating...");
-    this.active = true;
-    this.activationProgress = 0;
-    this.blade.visible = true;
-    gameAudio.playSound('saberOn');
+  activate(activate: boolean = true): void {
+    if (this.active === activate) return;
+    
+    console.log("Lightsaber activating...");
+    this.active = activate;
+    
+    // Make blade visible immediately when activating
+    if (activate) {
+      this.blade.visible = true;
+      // Play activation sound
+      if (gameAudio) {
+        gameAudio.playSound('saberOn');
+      }
+    }
+    
+    // Animate the blade activation/deactivation
+    this.animateActivation(activate);
   }
   
   deactivate(): void {
@@ -801,68 +811,57 @@ export class Lightsaber extends Group {
     });
   }
 
-  createBlade(): void {
-    // Remove old blade if it exists
-    if (this.blade) {
-      this.remove(this.blade);
-    }
-    if (this.bladeSegments.length > 0) {
-      this.bladeSegments.forEach(segment => this.remove(segment));
-      this.bladeSegments = [];
-    }
-    
-    // Create blade group
+  /**
+   * Creates the blade mesh for the lightsaber
+   */
+  private createBlade(): void {
     this.blade = new Group();
-    this.blade.position.y = this.hiltLength;
-    this.add(this.blade);
+    this.blade.position.set(0, this.hiltLength / 2, 0); // Position at top of hilt
     
-    // Create blade core (inner white part)
-    const coreGeo = new CylinderGeometry(0.015, 0.015, this.bladeLength, 8);
-    const coreMat = new MeshBasicMaterial({ 
-      color: 0xffffff,
-      transparent: false, // Core should be solid white
-      opacity: 1.0,
-      blending: AdditiveBlending // Helps it glow through
+    // Create the outer glow
+    const bladeGeometry = new CylinderGeometry(0.03, 0.02, this.bladeLength, 16);
+    const bladeMaterial = new MeshBasicMaterial({
+      color: this.bladeColor,
+      transparent: true,
+      opacity: 0.4,
+      blending: AdditiveBlending // Add this for better glow effect
     });
-    this.bladeCore = new Mesh(coreGeo, coreMat);
-    this.bladeCore.position.y = this.hiltLength + this.bladeLength / 2;
-    this.bladeCore.renderOrder = 1; // Render core after main blade
+    this.bladeMesh = new Mesh(bladeGeometry, bladeMaterial);
+    this.bladeMesh.position.set(0, this.bladeLength / 2, 0);
+    this.blade.add(this.bladeMesh);
+    
+    // Create inner core - brighter
+    const coreGeometry = new CylinderGeometry(0.015, 0.01, this.bladeLength + 0.05, 8);
+    const coreMaterial = new MeshBasicMaterial({
+      color: 0xffffff, // White core
+      transparent: false, // Change to false to make core fully visible
+      opacity: 1.0,
+      blending: AdditiveBlending // Add this for better glow effect
+    });
+    this.bladeCore = new Mesh(coreGeometry, coreMaterial);
+    this.bladeCore.position.set(0, this.bladeLength / 2, 0);
     this.blade.add(this.bladeCore);
     
-    // Create main blade (colored glow)
-    const bladeGeo = new CylinderGeometry(0.03, 0.03, this.bladeLength, 16);
-    const bladeMat = new MeshBasicMaterial({ 
-      color: this.bladeColor, 
-      transparent: true, 
-      opacity: 0.6, // Slightly more transparent outer glow
-      blending: AdditiveBlending 
-    });
-    this.bladeMesh = new Mesh(bladeGeo, bladeMat);
-    this.bladeMesh.position.y = this.hiltLength + this.bladeLength / 2;
-    this.bladeMesh.renderOrder = 0; // Render main blade first
-    this.blade.add(this.bladeMesh);
-
-    // Create plasma core (innermost bright line) - Optional but adds detail
-    const plasmaGeo = new CylinderGeometry(0.005, 0.005, this.bladeLength, 4);
-    const plasmaMat = new MeshBasicMaterial({ 
-      color: 0xffffff, 
-      transparent: false, 
+    // Create brightest plasma core
+    const plasmaGeometry = new CylinderGeometry(0.008, 0.005, this.bladeLength + 0.1, 8);
+    const plasmaMaterial = new MeshBasicMaterial({
+      color: 0xffffff, // Pure white
+      transparent: false, // Change to false to make plasma fully visible
       opacity: 1.0,
-      blending: AdditiveBlending 
+      blending: AdditiveBlending // Add this for better glow effect
     });
-    this.plasmaCore = new Mesh(plasmaGeo, plasmaMat);
-    this.plasmaCore.position.y = this.hiltLength + this.bladeLength / 2;
-    this.plasmaCore.renderOrder = 2; // Render plasma core last (on top)
+    this.plasmaCore = new Mesh(plasmaGeometry, plasmaMaterial);
+    this.plasmaCore.position.set(0, this.bladeLength / 2, 0);
     this.blade.add(this.plasmaCore);
     
-    // Make sure blade is initially invisible if not active
-    this.blade.visible = this.active;
+    // Add blade to the lightsaber
+    this.add(this.blade);
     
-    // Add blade light
-    this.createBladeLight();
+    // Initially hide blade
+    this.blade.visible = false;
     
-    // Create blade glow particles
-    this.createGlowEmitter();
+    // Verify components
+    console.log("Blade components verified");
   }
 
   startSwingAnimation(): void {

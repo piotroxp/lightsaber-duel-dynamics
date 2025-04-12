@@ -117,6 +117,10 @@ export class Player extends Group {
   // Add properties for head bobbing
   private bobTime: number = 0;
   
+  // Add properties for head bobbing
+  private headBobTimer: number = 0;
+  private headBobValue: number = 0;
+  
   constructor(scene: Scene, camera: Camera) {
     super();
     
@@ -134,175 +138,130 @@ export class Player extends Group {
     this.originalCameraPosition.copy(camera.position);
 
     // Setup input listeners at the VERY END of the constructor
-    this.setupControls(); 
+    this.setupInputListeners(); 
   }
   
-  private setupControls(): void {
-    // Keyboard controls
+  private setupInputListeners(): void {
+    // Keyboard down handler
     document.addEventListener('keydown', (event) => {
       switch (event.code) {
-        case 'KeyW': this.isMovingForward = true; break;
-        case 'KeyS': this.isMovingBackward = true; break;
-        case 'KeyA': this.isMovingLeft = true; break;
-        case 'KeyD': this.isMovingRight = true; break;
-        case 'Space': 
-          event.preventDefault(); // Prevent browser scrolling
-          if (this.isGrounded) {
-            this.isJumping = true;
-            this.jumpVelocity = this.jumpForce;
-            this.isGrounded = false;
-            console.log(`Jump initiated: velocity=${this.jumpVelocity}`);
-          }
+        case 'KeyW':
+          this.isForwardPressed = true;
           break;
-        case 'ControlLeft':
-        case 'ControlRight':
-          if (!this.isJumping) {
-            this.isCrouching = true;
-          }
+        case 'KeyS':
+          this.isBackwardPressed = true;
           break;
-        case 'Digit1': 
-          // Toggle lightsaber on/off
-          this.toggleLightsaber();
+        case 'KeyA':
+          this.isLeftPressed = true;
           break;
-      }
-      
-      // Prevent Ctrl+W from closing the browser
-      if (event.ctrlKey) {
-        event.preventDefault();
+        case 'KeyD':
+          this.isRightPressed = true;
+          break;
+        case 'Space':
+          this.isJumpPressed = true;
+          break;
+        // Attack controls
+        case 'MouseLeft':
+        case 'KeyF':
+          this.isAttackPressed = true;
+          break;
+        // Block control
+        case 'KeyQ':
+          this.isBlockPressed = true;
+          break;
+        // Heavy attack
+        case 'KeyE':
+          this.isHeavyAttackPressed = true;
+          break;
       }
     });
-
+    
+    // Keyboard up handler
     document.addEventListener('keyup', (event) => {
       switch (event.code) {
-        case 'KeyW': this.isMovingForward = false; break;
-        case 'KeyS': this.isMovingBackward = false; break;
-        case 'KeyA': this.isMovingLeft = false; break;
-        case 'KeyD': this.isMovingRight = false; break;
-        case 'ControlLeft':
-        case 'ControlRight':
-          this.isCrouching = false;
+        case 'KeyW':
+          this.isForwardPressed = false;
+          break;
+        case 'KeyS':
+          this.isBackwardPressed = false;
+          break;
+        case 'KeyA':
+          this.isLeftPressed = false;
+          break;
+        case 'KeyD':
+          this.isRightPressed = false;
+          break;
+        case 'Space':
+          this.isJumpPressed = false;
+          break;
+        // Attack controls
+        case 'MouseLeft':
+        case 'KeyF':
+          this.isAttackPressed = false;
+          break;
+        // Block control
+        case 'KeyQ':
+          this.isBlockPressed = false;
+          break;
+        // Heavy attack
+        case 'KeyE':
+          this.isHeavyAttackPressed = false;
           break;
       }
     });
     
-    // Mouse controls for attacking
+    // Mouse events for attacks
     document.addEventListener('mousedown', (event) => {
-      // Skip if clicking on a UI element
-      if (event.target instanceof HTMLElement && 
-          (event.target.closest('.color-picker') || 
-           event.target.closest('button') || 
-           event.target.closest('input'))) {
-        this.clickedOnUI = true;
-        console.log("Clicked on UI element, skipping attack");
-        return;
-      }
-      
-      // Not clicking on UI
-      this.clickedOnUI = false;
-      console.log("Mouse down - not on UI");
-      
-      if (event.button === 0) { // Left click
-        // Directly set attack state
+      if (event.button === 0 && !this.clickedOnUI) { // Left click
         this.isAttackPressed = true;
-        this.state = PlayerState.ATTACKING;
-        // Directly trigger attack
-        this.startAttack();
-        console.log("Left click - attack triggered");
-      } else if (event.button === 2) { // Right click
-        // Directly set block state
+      }
+      if (event.button === 2 && !this.clickedOnUI) { // Right click
         this.isBlockPressed = true;
-        this.state = PlayerState.BLOCKING;
-        // Directly trigger block
-        this.startBlock();
-        console.log("Right click - block triggered");
       }
     });
     
-    // Reset UI click flag on mouseup
     document.addEventListener('mouseup', (event) => {
-      this.clickedOnUI = false;
-      
-      // Reset attack/block state on mouse up
       if (event.button === 0) { // Left click
         this.isAttackPressed = false;
-        if (this.state === PlayerState.ATTACKING) {
-          this.state = PlayerState.IDLE;
-        }
-      } else if (event.button === 2) { // Right click
+      }
+      if (event.button === 2) { // Right click
         this.isBlockPressed = false;
-        if (this.state === PlayerState.BLOCKING) {
-          this.state = PlayerState.IDLE;
-        }
       }
     });
   }
   
-  private handleKeyDown(event: KeyboardEvent): void {
-    // Skip if player is dead
-    if (this.state === PlayerState.DEAD) return;
+  private handleMovementInput(): void {
+    // Reset movement flags
+    this.isMovingForward = false;
+    this.isMovingBackward = false;
+    this.isMovingLeft = false;
+    this.isMovingRight = false;
     
-    // Map keys to movement flags
-    switch (event.key.toLowerCase()) {
-      case 'w':
-        this.isMovingForward = true;
-        break;
-      case 's':
-        this.isMovingBackward = true;
-        break;
-      case 'a':  // Ensure A maps to moving LEFT
-        this.isMovingLeft = true;
-        break;
-      case 'd':  // Ensure D maps to moving RIGHT
-        this.isMovingRight = true;
-        break;
-      case '3':  // Toggle third-person view
-        console.log("Toggle third-person view key pressed");
-        this.toggleThirdPersonView();
-        break;
-    }
-  }
-  
-  private handleKeyUp(event: KeyboardEvent): void {
-    // Map keys to movement flags
-    switch (event.key.toLowerCase()) {
-      case 'w':
-        this.isMovingForward = false;
-        break;
-      case 's':
-        this.isMovingBackward = false;
-        break;
-      case 'a':  // Ensure A maps to moving LEFT
-        this.isMovingLeft = false;
-        break;
-      case 'd':  // Ensure D maps to moving RIGHT
-        this.isMovingRight = false;
-        break;
-    }
-  }
-  
-  private handleMouseDown(event: MouseEvent): void {
-    // Skip if clicking on a UI element
-    if (event.target instanceof HTMLElement && 
-        (event.target.closest('.color-picker') || 
-         event.target.closest('button') || 
-         event.target.closest('input'))) {
-      return;
+    // Check keyboard state
+    if (this.isForwardPressed) {
+      this.isMovingForward = true;
+      // Set move direction vector based on camera orientation
+      this.moveDirection.z = -1;
     }
     
-    if (event.button === 0) { // Left mouse button
-      this.isAttackPressed = true;
-      this.startAttack();
-    } else if (event.button === 2) { // Right mouse button
-      this.isBlockPressed = true;
-      this.startBlock();
+    if (this.isBackwardPressed) {
+      this.isMovingBackward = true;
+      this.moveDirection.z = 1;
     }
-  }
-  
-  private handleMouseUp(event: MouseEvent): void {
-    if (event.button === 0) { // Left mouse button
-      this.isAttackPressed = false;
-    } else if (event.button === 2) { // Right mouse button
-      this.isBlockPressed = false;
+    
+    if (this.isLeftPressed) {
+      this.isMovingLeft = true;
+      this.moveDirection.x = -1;
+    }
+    
+    if (this.isRightPressed) {
+      this.isMovingRight = true;
+      this.moveDirection.x = 1;
+    }
+    
+    // Normalize direction vector to maintain consistent speed when moving diagonally
+    if (this.moveDirection.lengthSq() > 0) {
+      this.moveDirection.normalize();
     }
   }
   
@@ -316,7 +275,7 @@ export class Player extends Group {
     const previousY = this.camera.position.y; // Store previous camera Y for bobbing calculation
     
     // Handle Movement Input (apply forces/velocity changes)
-    this.handleMovementInput(deltaTime); // Renamed from handleInput
+    this.handleMovementInput();
 
     // Apply gravity and ground check
     this.applyPhysics(deltaTime);
@@ -328,20 +287,7 @@ export class Player extends Group {
     this.updateCameraBobbing(deltaTime, previousY);
 
     // Handle Action Inputs (Attack/Block) - Process flags set by listeners
-    if (this.isAttackPressed) {
-      this.attack(); // attack() handles state checks and cooldowns
-      this.isAttackPressed = false; // Consume flag
-    } else if (this.isHeavyAttackPressed) {
-      this.heavyAttack(); // heavyAttack() handles state checks and cooldowns
-      this.isHeavyAttackPressed = false; // Consume flag
-    } else if (this.isBlockPressed) {
-      this.block(); // block() handles state checks
-    } else {
-      // If not attacking and block released, stop blocking
-      if (this.state === PlayerState.BLOCKING) {
-         this.stopBlocking();
-      }
-    }
+    this.updateAttack(deltaTime);
 
     // Update state based on movement
     if (this.velocity.lengthSq() > 0.01 && this.state !== PlayerState.ATTACKING && this.state !== PlayerState.BLOCKING) {
@@ -383,47 +329,6 @@ export class Player extends Group {
     this.frameCount++;
   }
   
-  private handleMovementInput(deltaTime: number): void {
-    const cameraDirection = new Vector3();
-    this.camera.getWorldDirection(cameraDirection);
-    cameraDirection.y = 0; // Project onto XZ plane
-    cameraDirection.normalize();
-
-    const rightVector = new Vector3();
-    rightVector.crossVectors(this.camera.up, cameraDirection).normalize();
-
-    this.moveDirection.set(0, 0, 0); // Reset move direction each frame
-
-    if (this.isForwardPressed) this.moveDirection.add(cameraDirection);
-    if (this.isBackwardPressed) this.moveDirection.sub(cameraDirection);
-    if (this.isLeftPressed) this.moveDirection.sub(rightVector); // Corrected direction
-    if (this.isRightPressed) this.moveDirection.add(rightVector); // Corrected direction
-
-    // Apply movement impulse/velocity change (simplified example)
-    if (this.moveDirection.lengthSq() > 0) {
-       this.moveDirection.normalize();
-       // Apply force differently based on state (e.g., slower when attacking/blocking)
-       let currentMoveSpeed = this.moveSpeed;
-       if (this.state === PlayerState.ATTACKING || this.state === PlayerState.BLOCKING) {
-          currentMoveSpeed *= 0.4; // Slower movement during actions
-       }
-       // Directly modify velocity (you might use forces in a more complex physics setup)
-       this.velocity.x = this.moveDirection.x * currentMoveSpeed;
-       this.velocity.z = this.moveDirection.z * currentMoveSpeed;
-    } else {
-       // Apply damping/friction when no input
-       this.velocity.x *= 0.9; // Damping factor
-       this.velocity.z *= 0.9;
-    }
-
-    // Handle Jump Input
-    if (this.isJumpPressed && this.isGrounded) {
-       this.velocity.y = this.jumpForce;
-       this.isGrounded = false; // No longer on ground after jumping
-       this.isJumpPressed = false; // Consume jump input
-    }
-  }
-
   private applyPhysics(deltaTime: number): void {
      // Ground check (simple raycast down)
      const groundRay = new Raycaster(this.position, new Vector3(0, -1, 0), 0, this.height * 0.6);
@@ -455,68 +360,60 @@ export class Player extends Group {
      }
   }
 
-  private attack(): void {
-    if (this.debugMode) console.log("Player light attack attempt");
-    if (this.state === PlayerState.ATTACKING || 
-        this.state === PlayerState.DEAD || 
-        this.state === PlayerState.STAGGERED ||
-        this.state === PlayerState.BLOCKING) return; // Cannot attack while blocking
-    
-    // Check cooldown
-    const currentTime = performance.now() / 1000;
-    if (currentTime - this.lastAttackTime < this.attackCooldown) {
-      console.log("Attack cooldown active");
-      return; 
+  /**
+   * Updates the player's attack state and performs attacks
+   */
+  private updateAttack(deltaTime: number): void {
+    // Decrement cooldown timer
+    if (this.lastAttackTime > 0) {
+      this.lastAttackTime -= deltaTime;
     }
-
-    console.log("Player light attack");
-    this.lastAttackTime = performance.now() / 1000;
-    this.state = PlayerState.ATTACKING;
-    this.currentAttackType = 'light';
     
-    // Start swing animation
-    this.isSwinging = true;
-    this.swingStartTime = performance.now();
-    this.swingDuration = 500; // ms
-    this.damageAppliedInCurrentAttack = false;
+    // Check for attack input and cooldown
+    if (this.isAttackPressed && this.lastAttackTime <= 0) {
+      this.attack(false); // Regular attack
+    } else if (this.isHeavyAttackPressed && this.lastAttackTime <= 0) {
+      this.attack(true); // Heavy attack
+    }
     
-    // Play sound
-    gameAudio.playSound('lightsaberSwing', { volume: 0.7 });
-    
-    // Reset state after attack duration (handled in updateLightsaberSwing now)
-    if (this.debugMode) console.log("Player light attack started");
+    // Update ongoing attacks
+    if (this.isSwinging) {
+      this.updateLightsaberSwing(deltaTime);
+    }
   }
-  
-  private heavyAttack(): void {
-    if (this.state === PlayerState.ATTACKING || 
-        this.state === PlayerState.DEAD || 
-        this.state === PlayerState.STAGGERED ||
-        this.state === PlayerState.BLOCKING) return; // Cannot attack while blocking
-    
-    // Check cooldown (longer for heavy)
-    const currentTime = performance.now() / 1000;
-    if (currentTime - this.lastAttackTime < this.attackCooldown * 1.5) {
-      console.log("Heavy attack cooldown active");
-      return;
-    }
 
-    console.log("Player heavy attack");
-    this.lastAttackTime = performance.now() / 1000;
+  /**
+   * Perform an attack with the lightsaber
+   */
+  private attack(isHeavy: boolean = false): void {
+    if (!this.lightsaber || this.state === PlayerState.ATTACKING || this.state === PlayerState.DEAD) return;
+    
+    // Initialize attackDirection if not already done
+    if (!this.attackDirection) {
+      this.attackDirection = new Vector3(0, 0, -1);
+    }
+    
     this.state = PlayerState.ATTACKING;
-    this.currentAttackType = 'heavy';
-    
-    // Longer duration for heavy attack
-    this.swingDuration = 800;
-    
-    // Start swing animation
     this.isSwinging = true;
     this.swingStartTime = performance.now();
+    this.currentAttackType = isHeavy ? 'heavy' : 'light';
+    this.swingDuration = isHeavy ? 800 : 500; // Heavy attacks are slower
     this.damageAppliedInCurrentAttack = false;
     
-    // Play sound
-    gameAudio.playSound('lightsaberSwing', { volume: 0.9, detune: -300 });
+    // Play sound effect
+    if (gameAudio) {
+      gameAudio.playSound(isHeavy ? 'saberHeavySwing' : 'saberSwing');
+    }
     
-    // Reset state after attack duration (handled in updateLightsaberSwing now)
+    // Set cooldown
+    this.lastAttackTime = isHeavy ? this.attackCooldown * 1.5 : this.attackCooldown;
+    
+    // Get attack direction from camera's forward vector
+    if (this.camera) {
+      const forward = new Vector3(0, 0, -1);
+      this.camera.getWorldDirection(forward);
+      this.attackDirection.copy(forward);
+    }
   }
   
   public takeDamage(amount: number, attackerPosition?: Vector3): void {
@@ -1096,7 +993,7 @@ export class Player extends Group {
       this.isAttackPressed = false; // Consume the input
     }
     if (this.isHeavyAttackPressed) { // Assuming you have a way to trigger this (e.g., Shift + Click)
-      this.heavyAttack();
+      this.attack(true);
       this.isHeavyAttackPressed = false; // Consume the input
     }
 
@@ -1352,5 +1249,50 @@ export class Player extends Group {
     this.debugMode = enabled;
     if (this.lightsaber) this.lightsaber.setDebugMode(enabled); // Propagate if needed
     // Toggle any visual debug helpers specific to the player
+  }
+
+  /**
+   * Updates the head bobbing effect when the player is moving
+   */
+  private updateHeadBob(deltaTime: number): void {
+    // Only apply head bobbing when the player is moving and on the ground
+    const isMoving = this.isMovingForward || this.isMovingBackward || 
+                     this.isMovingLeft || this.isMovingRight;
+    
+    // Get the camera for applying the bob effect
+    const camera = this.camera;
+    if (!camera) return;
+    
+    if (isMoving && this.isGrounded) {
+      // Increment the bob timer when moving
+      this.headBobTimer += deltaTime * (this.isCrouching ? 10 : 15); // Slower when crouching
+      
+      // Calculate the bob value using a sine wave
+      const bobSpeed = this.moveSpeed / 5; // Adjust bob speed based on movement speed
+      this.headBobValue = Math.sin(this.headBobTimer * bobSpeed) * (this.isCrouching ? 0.01 : 0.02);
+      
+      // Apply the bob effect to the camera's Y position
+      // Assuming the camera is at height 1.8 (player height), add small offset
+      const baseHeight = this.height; // Default eye height
+      camera.position.y = baseHeight + this.headBobValue;
+      
+      // Optional: add slight left-right movement for more realistic effect
+      const lateralBob = Math.cos(this.headBobTimer * bobSpeed * 2) * 0.01;
+      camera.position.x = lateralBob;
+    } else {
+      // Gradually return to normal position when not moving
+      if (Math.abs(this.headBobValue) > 0.001) {
+        // Interpolate back to neutral position
+        this.headBobValue *= 0.8;
+        camera.position.y = this.height + this.headBobValue;
+        camera.position.x *= 0.8; // Reduce any lateral bob
+      } else {
+        // Reset values when close to neutral
+        this.headBobValue = 0;
+        this.headBobTimer = 0;
+        camera.position.y = this.height;
+        camera.position.x = 0;
+      }
+    }
   }
 }
