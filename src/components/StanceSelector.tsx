@@ -11,6 +11,11 @@ const StanceSelector: React.FC<StanceSelectorProps> = ({
   currentStance, 
   onSelectStance 
 }) => {
+  const handleStanceClick = (id: number) => {
+    console.log(`Stance button clicked: ${id}`);
+    onSelectStance(id);
+  };
+
   return (
     <div className="absolute bottom-4 right-4 bg-black/60 p-3 rounded-lg text-white">
       <h3 className="text-center font-bold mb-2">Lightsaber Stances</h3>
@@ -23,7 +28,7 @@ const StanceSelector: React.FC<StanceSelectorProps> = ({
                 ? 'bg-blue-600 text-white' 
                 : 'bg-gray-800 hover:bg-gray-700'
             }`}
-            onClick={() => onSelectStance(stance.id)}
+            onClick={() => handleStanceClick(stance.id)}
           >
             <div className="font-medium">{stance.name}</div>
             <div className="text-xs opacity-80">{stance.description}</div>

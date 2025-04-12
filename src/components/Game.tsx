@@ -289,12 +289,22 @@ const Game: React.FC = () => {
 
   // Add handler for stance selection from UI
   const handleSelectStance = useCallback((stanceId: number) => {
-    console.log(`Selecting stance: ${stanceId}`);
+    console.log(`Attempting to select stance: ${stanceId}`);
     
-    // Access the player correctly through gameSceneRef
-    if (gameSceneRef.current?.player) {
-      console.log("Player found, setting stance");
-      gameSceneRef.current.player.setStance(stanceId);
+    if (!gameSceneRef.current) {
+      console.error("No game scene available");
+      return;
+    }
+    
+    // Direct access to player instance from our scene reference
+    const player = gameSceneRef.current.player;
+    if (player) {
+      console.log("Player found, setting stance to:", stanceId);
+      // Call the setStance method with the right context
+      player.setStance(stanceId);
+      
+      // Also update local state for UI
+      setCurrentStance(stanceId);
     } else {
       console.error("Player not found in gameScene");
     }

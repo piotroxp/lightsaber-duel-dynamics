@@ -131,13 +131,13 @@ export class Player extends Group {
   // Add these to Player class properties
   private currentStance: number = 1; // Default to Form I
   private stances = [
-    { id: 1, name: "Form I: Shii-Cho", description: "Balanced, fundamental form" },
-    { id: 2, name: "Form II: Makashi", description: "Precision dueling form" },
-    { id: 3, name: "Form III: Soresu", description: "Ultimate defensive form" },
-    { id: 4, name: "Form IV: Ataru", description: "Acrobatic, aggressive form" },
-    { id: 5, name: "Form V: Djem So", description: "Power counterattacks" },
-    { id: 6, name: "Form VI: Niman", description: "Balanced form with Force techniques" },
-    { id: 7, name: "Form VII: Juyo", description: "Ferocious, unpredictable form" }
+    { id: 1, name: "Form I", description: "Balanced, fundamental form" },
+    { id: 2, name: "Form II", description: "Precision dueling form" },
+    { id: 3, name: "Form III", description: "Ultimate defensive form" },
+    { id: 4, name: "Form IV", description: "Acrobatic, aggressive form" },
+    { id: 5, name: "Form V", description: "Power counterattacks" },
+    { id: 6, name: "Form VI", description: "Balanced form with Force techniques" },
+    { id: 7, name: "Form VII", description: "Ferocious, unpredictable form" }
   ];
   
   constructor(scene: Scene, camera: Camera) {
@@ -168,6 +168,8 @@ export class Player extends Group {
     
     // Setup stance system
     this.setupStanceSystem();
+    
+    console.log("Player fully initialized with stance system");
   }
   
   /**
@@ -273,6 +275,7 @@ export class Player extends Group {
       if (event.button === 0) { // Left click
         this.isAttackPressed = false;
       } else if (event.button === 2) { // Right click
+        console.log("Right mouse button released - ending block");
         this.isBlockPressed = false;
         if (this.state === PlayerState.BLOCKING) {
           this.state = PlayerState.IDLE;
@@ -466,19 +469,19 @@ export class Player extends Group {
    * Updates the player's attack state and performs attacks
    */
   private updateAttack(deltaTime: number): void {
-    // Decrement cooldown timer
+    // Decrement cooldown timer (keep original cooldown logic)
     if (this.lastAttackTime > 0) {
       this.lastAttackTime -= deltaTime;
     }
     
-    // Check for attack input and cooldown
+    // Check for attack input and cooldown (keep original attack triggering)
     if (this.isAttackPressed && this.lastAttackTime <= 0) {
       this.attack(false); // Regular attack
     } else if (this.isHeavyAttackPressed && this.lastAttackTime <= 0) {
       this.attack(true); // Heavy attack
     }
     
-    // Update ongoing attacks
+    // Update ongoing swings with directional awareness
     if (this.isSwinging) {
       this.updateLightsaberSwing(deltaTime);
     }
@@ -488,34 +491,23 @@ export class Player extends Group {
    * Perform an attack with the lightsaber
    */
   private attack(isHeavy: boolean = false): void {
-    if (!this.lightsaber || this.state === PlayerState.ATTACKING || this.state === PlayerState.DEAD) return;
-    
-    // Initialize attackDirection if not already done
-    if (!this.attackDirection) {
-      this.attackDirection = new Vector3(0, 0, -1);
+    // Don't attack if in certain states
+    if (this.state === PlayerState.DEAD || this.state === PlayerState.BLOCKING) {
+      return;
     }
     
+    // Start the attack
     this.state = PlayerState.ATTACKING;
     this.isSwinging = true;
     this.swingStartTime = performance.now();
-    this.currentAttackType = isHeavy ? 'heavy' : 'light';
-    this.swingDuration = isHeavy ? 800 : 500; // Heavy attacks are slower
     this.damageAppliedInCurrentAttack = false;
-    
-    // Play sound effect
-    if (gameAudio) {
-      gameAudio.playSound(isHeavy ? 'saberHeavySwing' : 'saberSwing');
-    }
+    this.currentAttackType = isHeavy ? 'heavy' : 'light';
     
     // Set cooldown
     this.lastAttackTime = isHeavy ? this.attackCooldown * 1.5 : this.attackCooldown;
     
-    // Get attack direction from camera's forward vector
-    if (this.camera) {
-      const forward = new Vector3(0, 0, -1);
-      this.camera.getWorldDirection(forward);
-      this.attackDirection.copy(forward);
-    }
+    // Play attack sound
+    gameAudio.playSound('saberSwing', 0.5);
   }
   
   public takeDamage(amount: number, attackerPosition?: Vector3): void {
@@ -556,6 +548,11 @@ export class Player extends Group {
       console.log("[PLAYER] Player died!");
       this.state = PlayerState.DEAD;
       this.dispatchEvent({ type: 'died' } as any);
+      
+      // CRITICAL: Automatically respawn after delay
+      setTimeout(() => {
+        this.respawn();
+      }, 3000);
     } else {
       // Apply short stagger
       this.state = PlayerState.STAGGERED;
@@ -1028,59 +1025,54 @@ export class Player extends Group {
    * Respawn the player after death
    */
   public respawn(): void {
-    console.log("Starting player respawn...");
+    console.log("Player respawning...");
     
-    // Move player to spawn position
-    this.position.set(0, 0, 0);
-    this.velocity.set(0, 0, 0);
-    
-    // Restore player health
+    // Reset health
     this.health = this.maxHealth;
     
-    // Explicitly reset ALL flags and states
+    // Reset state
+    this.state = PlayerState.IDLE;
+    this.isBlocking = false;
+    
+    // Reset position
+    this.position.set(0, 0.1, 0);
+    this.velocity.set(0, 0, 0);
+    
+    // Reset all movement flags
     this.isForwardPressed = false;
     this.isBackwardPressed = false;
     this.isLeftPressed = false;
     this.isRightPressed = false;
-    this.isJumpPressed = false;
-    this.isBlockPressed = false;
     this.isAttackPressed = false;
+    this.isBlockPressed = false;
     this.isHeavyAttackPressed = false;
-    this.isSwinging = false;
-    this.isGrounded = true;
-    this.isJumping = false;
-    this.damageAppliedInCurrentAttack = false;
     
-    // IMPORTANT: Reset the state to IDLE to allow movement
-    this.state = PlayerState.IDLE;
-    
-    // Reset camera position to default
-    if (this.camera) {
-      this.camera.position.set(0, 1.8, 0);
-    }
-    
-    // Reset and position lightsaber
+    // Reset the lightsaber
     if (this.lightsaber) {
-      this.lightsaber.position.set(0, -0.3, -0.7);
-      this.lightsaber.rotation.set(Math.PI / 20, 0, 0);
+      this.resetLightsaberPosition();
       this.lightsaber.activate();
     }
     
-    // Dispatch events for UI updates
+    // CRITICAL: Re-enable controls that might have been disabled
+    if (this.controls) {
+      this.controls.unlock();
+      this.controls.enabled = true;
+      
+      // Force controls to re-lock after a short delay
+      setTimeout(() => {
+        if (this.controls) {
+          this.controls.lock();
+        }
+      }, 100);
+    }
+    
+    // Emit event for UI update
     this.dispatchEvent({ 
       type: 'healthChanged', 
-      detail: { health: this.maxHealth, maxHealth: this.maxHealth } 
+      detail: { health: this.health, maxHealth: this.maxHealth } 
     });
-    this.dispatchEvent({ type: 'respawned' });
     
-    // Also notify any enemies to reset their targeting
-    const resetEvent = new CustomEvent('playerRespawned', { detail: { player: this } });
-    document.dispatchEvent(resetEvent);
-    
-    console.log("Player respawn complete - State:", this.state, "Position:", this.position.toArray());
-    
-    // Store last respawn time
-    this.lastRespawnTime = performance.now();
+    console.log("Player respawn complete");
   }
 
   private handleJumping(deltaTime: number): void {
@@ -1295,36 +1287,178 @@ export class Player extends Group {
     });
   }
 
-  // Fix the lightsaber swing update
+  // Refined lightsaber slash animations for closer, more intimate combat feel
   private updateLightsaberSwing(deltaTime: number): void {
-    if (!this.lightsaber || !this.isSwinging) return;
+    if (!this.lightsaber) return;
     
-    const elapsed = performance.now() - this.swingStartTime;
-    const progress = Math.min(elapsed / this.swingDuration, 1);
+    // Calculate attack progress
+    const attackProgress = (performance.now() - this.swingStartTime) / this.swingDuration;
     
-    // Simple swing animation with local camera space
-    if (progress < 1) {
-      // Calculate swing angle based on progress (0 to 1)
-      const swingAngle = Math.sin(progress * Math.PI) * (Math.PI * 0.6); 
-      const verticalAngle = Math.sin(progress * Math.PI * 2) * (Math.PI / 8);
-      
-      // Reset to base position/rotation
-      this.lightsaber.position.set(0, -0.3, -0.7);
-      this.lightsaber.rotation.set(Math.PI / 20, 0, 0);
-      
-      // Apply local rotations
-      this.lightsaber.rotateZ(swingAngle);
-      this.lightsaber.rotateX(verticalAngle); 
-      
-      // Add some forward motion during swing
-      const forwardPush = Math.sin(progress * Math.PI) * 0.2;
-      this.lightsaber.position.z -= forwardPush;
-    } else {
-      // Swing complete, reset to neutral
+    // Check for attack completion
+    if (attackProgress >= 1) {
+      // Instead of immediately resetting position, start cooldown animation
       this.isSwinging = false;
-      this.lightsaber.position.set(0, -0.3, -0.7);
-      this.lightsaber.rotation.set(Math.PI / 20, 0, 0);
-      this.state = PlayerState.IDLE;
+      this.damageAppliedInCurrentAttack = false;
+      
+      // Start recovery animation instead of instantly resetting
+      this.startRecoveryAnimation();
+      
+      if (this.state === PlayerState.ATTACKING) {
+        this.state = PlayerState.IDLE;
+      }
+      return;
+    }
+    
+    // Determine slash type based on movement
+    let slashType = "neutral";
+    
+    if (this.isLeftPressed) {
+      slashType = "diagonal-right-to-left";
+    } else if (this.isRightPressed) {
+      slashType = "diagonal-left-to-right";
+    } else if (this.isForwardPressed) {
+      slashType = "vertical-downward";
+    } else {
+      slashType = this.currentAttackType === 'heavy' ? "heavy-vertical" : "vertical-downward";
+    }
+    
+    // Base position is centered in front of camera
+    const basePosition = new Vector3(0, -0.2, -0.6);
+    
+    // Calculate the slash path
+    const progressRadians = attackProgress * Math.PI;
+    
+    if (slashType === "diagonal-right-to-left") {
+      // REFINED: More intimate diagonal slash, staying closer to player's reach
+      this.lightsaber.position.copy(basePosition);
+      
+      // CLOSER RANGE: 30% closer to player (X from -0.5 to 0.5 instead of -0.7 to 0.7)
+      const startX = -0.5;
+      const endX = 0.5;
+      this.lightsaber.position.x = startX + ((endX - startX) * attackProgress);
+      
+      // Y: Start high (0.5), end low (-0.3) - still good vertical range
+      this.lightsaber.position.y = 0.5 - (0.8 * attackProgress);
+      
+      // Z: Keep closer to player for more intimate feel, still with forward thrust
+      // Start at -0.5, thrust to -0.7 at middle, return to -0.5
+      const zBase = -0.5;
+      const zThrust = -0.2; // Additional forward thrust at middle
+      this.lightsaber.position.z = basePosition.z + zBase - (Math.sin(progressRadians) * zThrust);
+      
+      // Adjusted rotation for closer slash
+      const rotX = Math.PI/5 - (attackProgress * Math.PI/3);
+      const rotY = -Math.PI/5 + (attackProgress * Math.PI/3);
+      const rotZ = Math.PI/4 - (attackProgress * Math.PI/2);
+      
+      this.lightsaber.rotation.set(rotX, rotY, rotZ);
+    } 
+    else if (slashType === "diagonal-left-to-right") {
+      // REFINED: More intimate diagonal slash, staying closer to player's reach
+      this.lightsaber.position.copy(basePosition);
+      
+      // CLOSER RANGE: 30% closer to player (X from 0.5 to -0.5 instead of 0.7 to -0.7)
+      const startX = 0.5;
+      const endX = -0.5;
+      this.lightsaber.position.x = startX + ((endX - startX) * attackProgress);
+      
+      // Y: Start high (0.5), end low (-0.3) - still good vertical range
+      this.lightsaber.position.y = 0.5 - (0.8 * attackProgress);
+      
+      // Z: Keep closer to player for more intimate feel, still with forward thrust
+      // Start at -0.5, thrust to -0.7 at middle, return to -0.5
+      const zBase = -0.5;
+      const zThrust = -0.2; // Additional forward thrust at middle
+      this.lightsaber.position.z = basePosition.z + zBase - (Math.sin(progressRadians) * zThrust);
+      
+      // Adjusted rotation for closer slash
+      const rotX = Math.PI/5 - (attackProgress * Math.PI/3);
+      const rotY = Math.PI/5 - (attackProgress * Math.PI/3);
+      const rotZ = -Math.PI/4 + (attackProgress * Math.PI/2);
+      
+      this.lightsaber.rotation.set(rotX, rotY, rotZ);
+    }
+    else if (slashType === "vertical-downward" || slashType === "heavy-vertical") {
+      // FIXED: GUARANTEED FORWARD-ONLY vertical slash
+      this.lightsaber.position.copy(basePosition);
+      
+      // Simple vertical movement: starts high and in front, slashes down while staying in front
+      const yStart = 0.5;  // Start high
+      const yEnd = -0.3;   // End low
+      const yPos = yStart + ((yEnd - yStart) * attackProgress);
+      this.lightsaber.position.y = yPos;
+      
+      // CRITICAL FIX: Z position must ALWAYS be NEGATIVE (away from player)
+      // Fixed distance that is clearly in front of player
+      const zDistance = -0.8; // Always keep saber well in front of player
+      this.lightsaber.position.z = zDistance;
+      
+      // X position: very slight sway for style
+      const xOffset = 0.05;
+      this.lightsaber.position.x = Math.sin(progressRadians * 0.5) * xOffset;
+      
+      // GUARANTEED FORWARD ROTATION - mathematically ensure blade points forward
+      // Blade handle is at origin, blade extends along negative Z axis
+      // We only want to rotate around X axis to swing up/down
+      // SAFE rotation values that NEVER point blade toward player
+      const minRotX = -Math.PI/4; // Slightly up but still forward
+      const maxRotX = Math.PI/4;  // Slightly down but still forward
+      
+      const rotX = minRotX + (attackProgress * (maxRotX - minRotX));
+      
+      // Set rotation with fixed Y and Z to ensure blade always points forward
+      this.lightsaber.rotation.set(rotX, 0, 0);
+      
+      // Log for debugging to verify blade NEVER points at player
+      if (attackProgress === 0 || attackProgress === 0.5 || attackProgress === 1) {
+        console.log(`Vertical slash SAFETY CHECK at ${attackProgress.toFixed(2)}: rotX = ${rotX.toFixed(2)}`);
+      }
+    }
+    else if (slashType === "heavy-horizontal") {
+      // Closer, more intimate horizontal slash
+      this.lightsaber.position.copy(basePosition);
+      
+      // Horizontal movement at a more natural reach (30% closer)
+      const swingOffset = -0.5 + (1.0 * attackProgress);
+      this.lightsaber.position.x = swingOffset;
+      
+      // Slight forward thrust at middle of swing
+      const zBase = -0.5;
+      const zThrust = -0.2;
+      this.lightsaber.position.z = basePosition.z + zBase - (Math.sin(progressRadians) * zThrust);
+      
+      // Add slight vertical movement for style
+      this.lightsaber.position.y = basePosition.y + (Math.sin(progressRadians) * 0.15);
+      
+      // Enhanced rotation for horizontal slash
+      this.lightsaber.rotation.set(
+        Math.PI/6,  // Downward angle
+        progressRadians * 0.8,  // Horizontal rotation
+        Math.sin(progressRadians) * Math.PI/6  // Slight twist
+      );
+    } 
+    else {
+      // Standard horizontal slash - more intimate range
+      this.lightsaber.position.copy(basePosition);
+      
+      // Horizontal movement at a more natural reach (30% closer)
+      const swingOffset = -0.5 + (1.0 * attackProgress);
+      this.lightsaber.position.x = swingOffset;
+      
+      // Slight forward thrust at middle of swing
+      const zBase = -0.5;
+      const zThrust = -0.2;
+      this.lightsaber.position.z = basePosition.z + zBase - (Math.sin(progressRadians) * zThrust);
+      
+      // Add slight vertical movement for style
+      this.lightsaber.position.y = basePosition.y + (Math.sin(progressRadians) * 0.1);
+      
+      // Enhanced rotation for horizontal slash
+      this.lightsaber.rotation.set(
+        Math.PI/8,  // Slight downward angle
+        progressRadians * 0.8,  // Horizontal rotation
+        Math.sin(progressRadians) * Math.PI/8  // Slight twist
+      );
     }
   }
 
@@ -1405,6 +1539,9 @@ export class Player extends Group {
   private updateBlocking(deltaTime: number): void {
     if (this.isBlockPressed && this.state !== PlayerState.ATTACKING) {
       // Enter blocking state
+      if (this.state !== PlayerState.BLOCKING) {
+        console.log("Entering blocking state");
+      }
       this.state = PlayerState.BLOCKING;
       this.isBlocking = true;
       
@@ -1432,8 +1569,9 @@ export class Player extends Group {
         }
       }
     }
-    else if (!this.isBlockPressed && this.state === PlayerState.BLOCKING) {
-      // Exit blocking state
+    else if (this.state === PlayerState.BLOCKING) {  // <-- Important change here
+      // Exit blocking state - don't just check isBlockPressed, also check current state
+      console.log("Exiting blocking state");
       this.state = PlayerState.IDLE;
       this.isBlocking = false;
       
@@ -1477,17 +1615,21 @@ export class Player extends Group {
 
   // Add to the end of the constructor
   setupStanceSystem() {
-    // Initialize with Form I
+    console.log("Setting up stance system...");
+    
+    // Initialize with Form I - default stance
     this.setStance(1);
     
-    // Add keyboard shortcuts for stance switching (optional)
+    // Add keyboard shortcuts for stance switching
     document.addEventListener('keydown', (event) => {
-      // Number keys 1-7 to switch stances
       if (event.key >= '1' && event.key <= '7') {
         const stanceNumber = parseInt(event.key);
+        console.log(`Stance key pressed: ${stanceNumber}`);
         this.setStance(stanceNumber);
       }
     });
+    
+    console.log("Stance system initialized");
   }
 
   // Method to change stance
@@ -1541,5 +1683,57 @@ export class Player extends Group {
       type: 'stanceChanged', 
       detail: { stance: this.stances[stanceId-1] } 
     });
+  }
+
+  // Add this method to reset the lightsaber position
+  private resetLightsaberPosition(): void {
+    if (!this.lightsaber) return;
+    
+    // Reset to default position and rotation
+    this.lightsaber.position.set(0, -0.3, -0.7);
+    this.lightsaber.rotation.set(Math.PI / 20, 0, 0);
+  }
+
+  // Add this new method for smooth recovery animation
+  private startRecoveryAnimation(): void {
+    // Save the current position and rotation
+    const startPos = this.lightsaber.position.clone();
+    const startRot = this.lightsaber.rotation.clone();
+    
+    // Target position and rotation (default stance)
+    const targetPos = new Vector3(0, -0.3, -0.7);
+    const targetRot = new Euler(Math.PI / 20, 0, 0);
+    
+    // Animation variables
+    const duration = 300; // ms
+    const startTime = performance.now();
+    
+    // Create animation loop
+    const animateRecovery = () => {
+      const now = performance.now();
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Use easeOutQuad for more natural deceleration
+      const eased = 1 - (1 - progress) * (1 - progress);
+      
+      // Interpolate position and rotation
+      this.lightsaber.position.lerpVectors(startPos, targetPos, eased);
+      
+      // Interpolate rotation components individually
+      this.lightsaber.rotation.set(
+        startRot.x + (targetRot.x - startRot.x) * eased,
+        startRot.y + (targetRot.y - startRot.y) * eased,
+        startRot.z + (targetRot.z - startRot.z) * eased
+      );
+      
+      // Continue animation until complete
+      if (progress < 1) {
+        requestAnimationFrame(animateRecovery);
+      }
+    };
+    
+    // Start the animation
+    requestAnimationFrame(animateRecovery);
   }
 }
