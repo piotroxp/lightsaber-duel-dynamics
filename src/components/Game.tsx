@@ -265,13 +265,13 @@ const Game: React.FC = () => {
   // Add state for stance
   const [currentStance, setCurrentStance] = useState(1);
   const [stances, setStances] = useState([
-    { id: 1, name: "Form I: Shii-Cho", description: "Balanced, fundamental form" },
-    { id: 2, name: "Form II: Makashi", description: "Precision dueling form" },
-    { id: 3, name: "Form III: Soresu", description: "Ultimate defensive form" },
-    { id: 4, name: "Form IV: Ataru", description: "Acrobatic, aggressive form" },
-    { id: 5, name: "Form V: Djem So", description: "Power counterattacks" },
-    { id: 6, name: "Form VI: Niman", description: "Balanced form with Force techniques" },
-    { id: 7, name: "Form VII: Juyo", description: "Ferocious, unpredictable form" }
+    { id: 1, name: "Form I:", description: "Balanced, fundamental form" },
+    { id: 2, name: "Form II:", description: "Precision dueling form" },
+    { id: 3, name: "Form III:", description: "Ultimate defensive form" },
+    { id: 4, name: "Form IV:", description: "Acrobatic, aggressive form" },
+    { id: 5, name: "Form V:", description: "Power counterattacks" },
+    { id: 6, name: "Form VI:", description: "Balanced form with Force techniques" },
+    { id: 7, name: "Form VII:", description: "Ferocious, unpredictable form" }
   ]);
 
   // Add listener for stance changes from player
