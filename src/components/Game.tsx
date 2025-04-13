@@ -225,7 +225,7 @@ const Game: React.FC = () => {
   // Add this component for the scoreboard
   const Scoreboard = ({ playerScore, enemyScore }) => {
     return (
-      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-6 py-2 rounded-lg flex items-center gap-8 font-mono text-xl">
+      <div className="fixed bottom-4 left-32 transform -translate-x-1/2 bg-black/70 text-white px-6 py-2 rounded-lg flex items-center gap-8 font-mono text-xl">
         <div className="flex flex-col items-center">
           <span className="text-blue-400">PLAYER</span>
           <span className="text-2xl font-bold">{playerScore}</span>

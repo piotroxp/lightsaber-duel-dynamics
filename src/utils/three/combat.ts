@@ -126,7 +126,7 @@ export class CombatSystem {
        console.log("Player health BEFORE damage:", this.player.getHealth());
             
             // CRITICAL: Ensure enemy damage is applied properly
-            const damage = enemy.getAttackDamage();
+            const damage = enemy.getAttackDamage(3);
        console.log(`Enemy dealing ${damage} damage to player`);
             this.player.takeDamage(damage);
             
@@ -345,7 +345,7 @@ export class CombatSystem {
           console.log("Enemy attack connecting with player!");
           
           // Deal damage to player directly
-          const damage = enemy.getAttackDamage();
+          const damage = enemy.getAttackDamage(3);
           this.player.takeDamage(damage);
           
           // Visual feedback
@@ -446,7 +446,7 @@ export class CombatSystem {
       const distToPlayer = this.player.getPosition().distanceTo(enemySaberPos);
       
       if (distToPlayer < 1.8 && enemy.getAttackTimer() > 0.2) {
-        this.player.takeDamage(enemy.getAttackDamage());
+        this.player.takeDamage(enemy.getAttackDamage(3));
         break;
       }
     }

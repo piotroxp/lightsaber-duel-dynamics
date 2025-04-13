@@ -482,8 +482,8 @@ export class Enemy extends Group {
     return this.maxHealth;
   }
   
-  getAttackDamage(): number {
-    return this.attackDamage;
+  getAttackDamage(count: number=1): number {
+    return this.attackDamage*count;
   }
   
   getAttackRange(): number {
