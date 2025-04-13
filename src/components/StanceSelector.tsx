@@ -18,7 +18,7 @@ const StanceSelector: React.FC<StanceSelectorProps> = ({
 
   return (
     <div className="absolute bottom-4 right-4 bg-black/60 p-3 rounded-lg text-white">
-      <h3 className="text-center font-bold mb-2">Lightsaber Stances</h3>
+      <h3 className="text-center font-bold mb-2">Plasmablade Stances</h3>
       <div className="flex flex-col gap-1 max-h-60 overflow-y-auto">
         {stances.map(stance => (
           <button
