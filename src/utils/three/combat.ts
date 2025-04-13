@@ -1,9 +1,9 @@
-
-import { Scene, Raycaster, Vector3, Mesh, Group, Object3D, Camera } from 'three';
+import { Scene, Raycaster, Vector3, Mesh, Group, Object3D, Camera, MeshBasicMaterial, SphereGeometry, MeshStandardMaterial } from 'three';
 import { Player } from './player';
 import { Enemy } from './enemy';
 import gameAudio from './audio';
 import { createSaberClashEffect } from './effects';
+import { createHitEffect } from './effects';
 
 export class CombatSystem {
   private scene: Scene;
@@ -13,6 +13,8 @@ export class CombatSystem {
   private hitCooldown: number = 0.4; // seconds
   private lastHitTime: number = 0;
   private camera: Camera | null = null;
+  private attackCooldowns = new WeakMap<Enemy, number>();
+  private debugMode: boolean = true;
   
   constructor(scene: Scene, player: Player) {
     this.scene = scene;
@@ -33,107 +35,217 @@ export class CombatSystem {
   }
   
   update(deltaTime: number): void {
-    // Update player and enemy attack collisions
-    this.checkPlayerAttacks(deltaTime);
-    this.checkEnemyAttacks(deltaTime);
-    
-    // CRITICAL: Force enemy to swing lightsaber and deal damage
-    for (const enemy of this.enemies) {
-      if (enemy.isAlive() && enemy.isAttacking()) {
-        if (!enemy.hasAppliedDamage && enemy.getAttackTimer() > 0.2) {
-          // Apply damage only once during attack animation at the right moment
-          const playerPos = this.player.getPosition();
-          const enemyPos = enemy.getPosition();
-          const distanceToPlayer = enemyPos.distanceTo(playerPos);
-          
-          // Check if player is in range
-          if (distanceToPlayer <= enemy.getAttackRange()) {
-            const damage = enemy.getAttackDamage();
-            
-            // Check if player is blocking in the right direction
-            if (this.player.isBlocking()) {
-              // Create clash effect at lightsaber intersection
-              const saberPos = this.player.getLightsaberPosition();
-              this.createClashEffect(saberPos);
-              
-              // Play clash sound
-              gameAudio.playSound('lightsaberClash', { volume: 0.7 });
-            } else {
-              // Deal damage to player if not blocking
-              this.player.takeDamage(damage);
-              
-              // Log damage dealt to player
-              console.log(`Enemy dealt ${damage} damage to player!`);
-            }
-            
-            // Mark damage as applied for this attack
-            enemy.hasAppliedDamage = true;
-          }
-        }
-      } else {
-        // Reset damage flag when not attacking
-        enemy.hasAppliedDamage = false;
-      }
-    }
-  }
-  
-  private checkPlayerAttacks(deltaTime: number): void {
-    // Skip if player is dead
-    if (!this.player.isAlive()) return;
-    
-    const currentTime = performance.now() / 1000;
-    
-    // Check player attack cooldown
-    if (currentTime - this.lastHitTime < this.hitCooldown) return;
-    
-    // FIXED: Improved damage detection when player is attacking
+    // Player attack debug
     if (this.player.isAttacking()) {
-      console.log("Player is attacking - checking for hits");
+       console.log("👊 PLAYER IS ATTACKING");
       
-      // Check each enemy
       for (const enemy of this.enemies) {
         if (!enemy.isAlive()) continue;
         
-        // Check distance to enemy
-        const distance = enemy.getPosition().distanceTo(this.player.getPosition());
-        
-        // FIXED: Damage application with proper range check
-        if (distance <= 3.0) {
-          console.log(`Enemy in attack range (${distance.toFixed(2)} units)`);
+        // REFINED HIT DETECTION: Only check during the swing animation
+        const swingProgress = this.player.getSwingProgress(); // Need to add this method to Player
+        // Check hit only during the middle part of the swing (e.g., 20% to 80%)
+        if (swingProgress > 0.2 && swingProgress < 0.8) {
+          const playerSaberTip = this.player.getLightsaberPosition(); // Position of the saber tip
+          const enemyBodyCenter = enemy.position.clone().add(new Vector3(0, 1, 0)); // Approx center mass
+          const hitDistance = playerSaberTip.distanceTo(enemyBodyCenter);
           
-          // Apply damage to enemy with direction
-          const damage = 25;
-          enemy.takeDamage(damage, this.player.getPosition());
-          console.log(`Applied ${damage} damage to enemy!`);
+       console.log("⚔️ Player Swing - Saber Tip to Enemy Center:", hitDistance.toFixed(2));
           
-          // Create hit effect at enemy position
-          const enemyPos = enemy.getPosition();
-          enemyPos.y = 1.2; // Adjust to torso height
-          createSaberClashEffect(this.scene, enemyPos, '#ff3300');
-          
-          // Play hit sound
-          gameAudio.playSound('lightsaberHit', { volume: 0.8 });
-          
-          // Apply camera shake for feedback
-          this.applyCameraShake(0.3);
-          
-          // Set last hit time to prevent rapid hits
-          this.lastHitTime = currentTime;
-          
-          // Only damage one enemy per swing
-          break;
+          // More realistic hit range
+          const hitRange = 1.5; // Adjust as needed
+
+          if (hitDistance < hitRange && !this.player.hasAppliedDamageInCurrentAttack()) {
+            console.log("🎯 DIRECT HIT DETECTED!");
+            
+            // Debug BEFORE damage
+            console.log("Enemy health BEFORE damage:", enemy.getHealth());
+            
+            // CRITICAL: Reduce damage to require at least 5 hits
+            // Reduced damage based on attack type
+            const damage = this.player.getCurrentAttackType() === 'heavy' ? 15 : 8; 
+            enemy.takeDamage(damage);
+            
+            // Debug AFTER damage
+            console.log("Enemy health AFTER damage:", enemy.getHealth());
+            
+            // Visuals and audio
+            createHitEffect(this.scene, enemy.position.clone().add(new Vector3(0, 1.2, 0)), '#ff0000');
+            gameAudio.playSound('enemyHit', { volume: 1.0 });
+            
+            // Add cooldown to prevent multiple hits in one swing
+            this.lastHitTime = performance.now() / 1000;
+            
+            // Mark that we've applied damage for this attack
+            this.player.setDamageAppliedInCurrentAttack(true);
+            
+            // Reset damage flag after a delay
+            setTimeout(() => {
+              this.player.setDamageAppliedInCurrentAttack(false);
+            }, 800);
+            
+            break;
+          }
         }
       }
     }
     
-    // Check for saber collisions
-    this.checkSaberCollisions();
+    // ENEMY ATTACK DETECTION - Fix to ensure enemy can damage player
+    for (const enemy of this.enemies) {
+      if (!enemy.isAlive() || !enemy.isAttacking()) continue;
+      
+      // More generous hit window
+      if (enemy.getAttackTimer() > 0.1 && enemy.getAttackTimer() < 0.8) {
+        console.log("⚔️ ENEMY ATTACK WINDOW ACTIVE");
+        
+        const playerPos = this.player.getPosition();
+        const hitDistance = playerPos.distanceTo(enemy.position);
+        
+        // Get enemy saber position for more accuracy
+        const enemySaberTip = enemy.getLightsaberPosition();
+        const distanceToEnemySaber = playerPos.distanceTo(enemySaberTip);
+
+       console.log("⚔️ Enemy Attack - Player to Enemy Saber:", distanceToEnemySaber.toFixed(2));
+        
+        // CRITICAL: Ensure enemy attacks land at reasonable distance
+        const enemyHitRange = 1.8; // Adjust as needed
+        if (distanceToEnemySaber < enemyHitRange && !enemy.hasAppliedDamageInCurrentAttack()) { // Add hasAppliedDamage flag to Enemy
+          // Check if player is blocking
+          if (this.player.isPlayerBlocking()) {
+       console.log("🛡️ PLAYER BLOCKED ENEMY ATTACK!");
+            // Trigger clash effect at block point
+            const blockPoint = this.player.getLightsaberPosition(); // Approx block point
+            createSaberClashEffect(this.scene, blockPoint, '#ffffff');
+            gameAudio.playSound('lightsaberClash', { volume: 0.9 });
+            // Optional: Apply stagger to enemy
+            enemy.applyStagger(0.5); 
+          } else {
+       console.log("🎯 PLAYER HIT BY ENEMY!");
+            
+            // Debug player health before damage
+       console.log("Player health BEFORE damage:", this.player.getHealth());
+            
+            // CRITICAL: Ensure enemy damage is applied properly
+            const damage = enemy.getAttackDamage();
+       console.log(`Enemy dealing ${damage} damage to player`);
+            this.player.takeDamage(damage);
+            
+            // Debug player health after damage
+       console.log("Player health AFTER damage:", this.player.getHealth());
+            
+            // Mark damage applied for this enemy attack
+            enemy.setDamageAppliedInCurrentAttack(true);
+            
+            // Visual and audio feedback
+            createHitEffect(this.scene, playerPos.clone().add(new Vector3(0, 1.2, 0)), '#ff0000');
+            gameAudio.playSound('playerHit', { volume: 1.0 });
+            this.applyCameraShake(0.4);
+            
+            // Add cooldown to prevent multiple hits
+            enemy.setAttackCooldown(1.5);
+            break;
+          }
+        }
+      }
+    }
+
+    // Check for player attack
+    this.checkPlayerAttacks(deltaTime);
+  }
+  
+  private checkPlayerAttacks(deltaTime: number): void {
+    // Skip if player is not attacking or is dead
+    if (!this.player.isAttacking() || !this.player.isAlive()) return;
     
-    // Update existing combat effects
-    this.updateCombatEffects(deltaTime);
+    // Skip if player just respawned (add a small delay)
+    const timeSinceRespawn = performance.now() / 1000 - this.player.getLastRespawnTime();
+    if (timeSinceRespawn < 2.0) return; // Longer delay to prevent accidental hits
+    
+    // Skip if we've already applied damage for this attack
+    if (this.player.hasAppliedDamageInCurrentAttack()) return;
+    
+    // Skip if lightsaber is not active
+    const playerLightsaber = this.player.getLightsaber();
+    if (!playerLightsaber || !playerLightsaber.isActive()) return;
+    
+    // Get player lightsaber position
+    const playerSaberPosition = this.player.getLightsaberPosition();
+    
+    // Check for hits on each enemy
+    for (const enemy of this.enemies) {
+      // Skip if enemy just respawned
+      const enemyTimeSinceRespawn = performance.now() / 1000 - enemy.getLastRespawnTime();
+      if (enemyTimeSinceRespawn < 2.0) continue; // Use continue instead of return to check other enemies
+      
+      // Skip if enemy is already dead
+      if (!enemy.isAlive()) continue;
+      
+      // Get enemy position (more precise - target the torso)
+      const enemyPosition = enemy.position.clone().add(new Vector3(0, 1.0, 0));
+      const distance = playerSaberPosition.distanceTo(enemyPosition);
+      
+      // Check if close enough to hit
+      if (distance < 1.5) {
+        console.log("⚔️ HIT ENEMY! Distance:", distance);
+        
+        // Apply damage to enemy
+        const damage = 10;
+        enemy.takeDamage(damage);
+        
+        // Mark that we've applied damage for this attack
+        this.player.setDamageAppliedInCurrentAttack(true);
+        
+        // Reset damage flag after a delay
+        setTimeout(() => {
+          this.player.setDamageAppliedInCurrentAttack(false);
+        }, 800);
+        
+        // Create clash effect
+        createSaberClashEffect(
+          this.scene,
+          playerSaberPosition,
+          '#3366ff'
+        );
+        
+        // Play clash sound
+        gameAudio.playSound('lightsaberClash', { volume: 0.8 });
+        
+        break; // Only hit one enemy per attack
+      }
+    }
   }
   
   private checkEnemyAttacks(deltaTime: number): void {
+    for (const enemy of this.enemies) {
+      if (!enemy.isAttacking() || !enemy.isAlive()) continue;
+      
+      const enemySaberPosition = enemy.getLightsaberPosition();
+      const playerPosition = this.player.position;
+      // Get more precise collision points
+      const playerTorsoPosition = playerPosition.clone().add(new Vector3(0, 1.0, 0));
+      const distance = enemySaberPosition.distanceTo(playerTorsoPosition);
+      
+      if (distance < 1.2) {
+        console.log("⚔️ ENEMY HIT PLAYER! Distance:", distance);
+        
+        // Apply damage
+        const damage = 5; // Reduced damage for better gameplay
+        this.player.takeDamage(damage);
+        
+        // Create clash effect
+        createSaberClashEffect(
+          this.scene,
+          enemySaberPosition,
+          '#ff0000'
+        );
+        
+        // Play clash sound
+        gameAudio.playSound('lightsaberClash', { volume: 0.8 });
+      }
+    }
+  }
+  
+  private checkCombatInteractions(deltaTime: number): void {
     // Skip if player is dead
     if (!this.player.isAlive()) return;
     
@@ -150,8 +262,10 @@ export class CombatSystem {
       if (distanceToPlayer < enemy.getAttackRange() && 
           currentTime - enemy.getLastAttackTime() > enemy.getAttackCooldown()) {
         
-        // Trigger attack
-        enemy.attack();
+        // Force damage application with direct hit
+        const damage = 25;
+        enemy.takeDamage(damage);
+        console.log(`Applied ${damage} damage to enemy!`);
         
         // Log attack
         console.log("Enemy attacked player!");
@@ -160,34 +274,91 @@ export class CombatSystem {
   }
   
   private checkSaberCollisions(): void {
-    // Check for lightsaber vs lightsaber collisions
     if (!this.player.isAlive()) return;
     
-    const playerSaberTip = this.player.getLightsaberPosition();
+    try {
+      // Get player lightsaber position
+      const playerSaberTip = this.player.getLightsaberPosition();
+      console.log("Player saber position:", playerSaberTip);
+      
+      for (const enemy of this.enemies) {
+        if (!enemy.isAlive()) continue;
+        
+        try {
+          // Get enemy lightsaber position
+          const enemySaberTip = enemy.getLightsaberPosition();
+          console.log("Enemy saber position:", enemySaberTip);
+          
+          // Calculate distance between sabers
+          const saberDistance = playerSaberTip.distanceTo(enemySaberTip);
+          console.log("Saber distance:", saberDistance);
+          
+          // CRITICAL: More generous collision detection
+          if (saberDistance < 1.5) {
+            console.log("LIGHTSABER CLASH DETECTED!");
+            
+            // Calculate midpoint for effect
+            const clashPosition = playerSaberTip.clone().lerp(enemySaberTip, 0.5);
+            
+            // Create clash effect
+            createSaberClashEffect(this.scene, clashPosition, '#ffffff');
+            
+            // Play clash sound
+            gameAudio.playSound('lightsaberClash', { volume: 1.0 });
+            
+            // Apply camera shake
+            this.applyCameraShake(0.6);
+            
+            // Force sabers back to spawn positions by applying "stagger" effect
+            this.player.applyStagger(0.3);
+            enemy.applyStagger(0.3);
+            
+            // Mark the clash so we don't create too many effects
+            this.lastHitTime = performance.now() / 1000;
+          }
+        } catch (error) {
+          console.error("Error during saber collision check:", error);
+        }
+      }
+    } catch (error) {
+      console.error("Error in checkSaberCollisions:", error);
+    }
+  }
+  
+  private updateEnemyAttacks(deltaTime: number): void {
+    // Skip if player is dead
+    if (!this.player.isAlive()) return;
     
     for (const enemy of this.enemies) {
       if (!enemy.isAlive()) continue;
       
-      const enemySaberTip = enemy.getLightsaberPosition();
-      
-      // Calculate distance between sabers
-      const saberDistance = playerSaberTip.distanceTo(enemySaberTip);
-      
-      if (saberDistance < 0.4) { // Sabers are clashing
-        // Calculate midpoint for effect
-        const clashPosition = playerSaberTip.clone().lerp(enemySaberTip, 0.5);
+      // CRITICAL: Directly apply damage when enemy is attacking and in range
+      if (enemy.isAttacking()) {
+        const playerPos = this.player.getPosition();
+        const enemyPos = enemy.getPosition();
+        const distanceToPlayer = enemyPos.distanceTo(playerPos);
         
-        // Create clash effect
-        this.createClashEffect(clashPosition);
+        // Force damage application at attack peak (when timer is ~0.3-0.5)
+        const attackProgress = enemy.getAttackTimer();
         
-        // Play clash sound
-        gameAudio.playSound('lightsaberClash', { volume: 0.9 });
-        
-        // Apply camera shake
-        this.applyCameraShake(0.4);
-        
-        // Mark the clash so we don't create too many effects
-        this.lastHitTime = performance.now() / 1000;
+        if (attackProgress > 0.3 && attackProgress < 0.5 && distanceToPlayer < 3) {
+          console.log("Enemy attack connecting with player!");
+          
+          // Deal damage to player directly
+          const damage = enemy.getAttackDamage();
+          this.player.takeDamage(damage);
+          
+          // Visual feedback
+          const attackPos = playerPos.clone();
+          attackPos.y = 1.4; // Adjust to player's torso height
+          createHitEffect(this.scene, attackPos, '#ff0000');
+          
+          // Sound effect
+          gameAudio.playSound('player_hit', { volume: 0.7 });
+          
+          // Camera shake
+          this.applyCameraShake(0.5);
+        }
       }
     }
   }
@@ -230,4 +401,214 @@ export class CombatSystem {
       this.camera.position.copy(originalPosition);
     }, 150);
   }
+
+  applyDamageToEnemy(enemy: Enemy, amount: number, sourcePosition: Vector3): void {
+    // Direct damage application with console log for debugging
+    console.log(`Applying ${amount} damage to enemy`);
+    enemy.takeDamage(amount);
+      
+    // Visual and audio effects
+    const hitPosition = enemy.position.clone();
+    hitPosition.y = 1.2;
+    createHitEffect(this.scene, hitPosition, '#ff0000');
+    gameAudio.playSound('enemyHit', { volume: 0.7 });
+  }
+
+  checkPlayerDamageToEnemies(): void {
+    if (!this.player.isAttacking()) return;
+    
+    console.log("Checking for player damage to enemies");
+    const playerSaberPos = this.player.getLightsaberPosition();
+    
+    for (const enemy of this.enemies) {
+      if (!enemy.isAlive()) continue;
+      
+      // More generous distance check (3.0 units)
+      const hitDistance = enemy.position.distanceTo(playerSaberPos);
+      console.log(`Distance to enemy: ${hitDistance.toFixed(2)} units`);
+      
+      if (hitDistance < 3.0) {
+        console.log(`DIRECT HIT: Player hit enemy at distance ${hitDistance.toFixed(2)}`);
+        this.applyDamageToEnemy(enemy, 25, playerSaberPos);
+        break; // Only hit one enemy per swing
+      }
+    }
+  }
+
+  checkEnemyDamageToPlayer(deltaTime: number): void {
+    if (!this.player.isAlive()) return;
+    
+    for (const enemy of this.enemies) {
+      if (!enemy.isAlive() || !enemy.isAttacking()) continue;
+      
+      // Simplified check for reliable enemy hits
+      const enemySaberPos = enemy.getLightsaberPosition();
+      const distToPlayer = this.player.getPosition().distanceTo(enemySaberPos);
+      
+      if (distToPlayer < 1.8 && enemy.getAttackTimer() > 0.2) {
+        this.player.takeDamage(enemy.getAttackDamage());
+        break;
+      }
+    }
+  }
+
+  // Add method to create scar marks at hit locations
+  createScarMark(target: Player | Enemy, hitPosition: Vector3): void {
+    try {
+      // Create glowing material for scar
+      const scarMaterial = new MeshStandardMaterial({
+        color: 0xff3300,
+        emissive: 0xff3300,
+        emissiveIntensity: 2.0,
+        metalness: 0.0,
+        roughness: 1.0
+      });
+      
+      // Create small scar mesh
+      const scarMesh = new Mesh(
+        new SphereGeometry(0.05, 8, 8),
+        scarMaterial
+      );
+      
+      // Position scar at hit point with slight randomization
+      const scarPosition = target.getPosition().clone();
+      scarPosition.y = 1.0 + Math.random() * 0.8; // Random height on body
+      scarPosition.x += (Math.random() - 0.5) * 0.3;
+      scarPosition.z += (Math.random() - 0.5) * 0.3;
+      
+      scarMesh.position.copy(scarPosition);
+      this.scene.add(scarMesh);
+      
+      // Fade out and remove after delay
+      setTimeout(() => {
+        this.scene.remove(scarMesh);
+        scarMaterial.dispose();
+      }, 3000);
+    } catch (error) {
+      console.error("Error creating scar mark:", error);
+    }
+  }
+
+  checkPlayerAttack(deltaTime: number): void {
+    const now = Date.now();
+    
+    this.enemies.forEach(enemy => {
+      if (!enemy.isAlive() || this.attackCooldowns.get(enemy)! > now) return;
+      
+      const distance = this.player.position.distanceTo(enemy.position);
+      if (distance < 2.5) {
+        enemy.takeDamage(20); // Consistent damage
+        this.attackCooldowns.set(enemy, now + 1000); // 1s cooldown
+        this.createHitEffect(enemy.position);
+      }
+    });
+  }
+
+  public setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
+  }
+}
+
+/**
+ * Calculate closest point between two line segments
+ * Used for lightsaber blade clash detection
+ */
+export function closestPointsBetweenLines(
+  line1Start: Vector3, 
+  line1End: Vector3, 
+  line2Start: Vector3, 
+  line2End: Vector3
+): { point1: Vector3, point2: Vector3, distance: number } {
+  // Direction vectors of the two lines
+  const dir1 = line1End.clone().sub(line1Start).normalize();
+  const dir2 = line2End.clone().sub(line2Start).normalize();
+  
+  // Calculate the parameters for the closest points
+  const a = dir1.dot(dir1); // Always 1 if normalized
+  const b = dir1.dot(dir2);
+  const c = dir2.dot(dir2); // Always 1 if normalized
+  
+  // Line directions are parallel (within a small epsilon)
+  const parallel = Math.abs(a * c - b * b) < 0.001;
+  
+  if (parallel) {
+    // Find closest pair of points on parallel lines
+    const d1 = line1Start.clone().sub(line2Start).dot(dir1) / a;
+    const point1 = line1Start.clone().add(dir1.clone().multiplyScalar(d1));
+    const point2 = point1.clone().add(dir2.clone().multiplyScalar(point1.clone().sub(line2Start).dot(dir2) / c));
+    return { 
+      point1, 
+      point2, 
+      distance: point1.distanceTo(point2) 
+    };
+  }
+  
+  // Set up parameters for non-parallel lines
+  const d = line1Start.clone().sub(line2Start);
+  const e = d.dot(dir1);
+  const f = d.dot(dir2);
+  
+  // Calculate parameters along each line
+  let s = (b * f - c * e) / (a * c - b * b);
+  let t = (a * f - b * e) / (a * c - b * b);
+  
+  // Clamp to line segment
+  s = Math.max(0, Math.min(1, s));
+  t = Math.max(0, Math.min(1, t));
+  
+  // Calculate the closest points
+  const point1 = line1Start.clone().add(dir1.clone().multiplyScalar(s));
+  const point2 = line2Start.clone().add(dir2.clone().multiplyScalar(t));
+  
+  return { 
+    point1, 
+    point2, 
+    distance: point1.distanceTo(point2) 
+  };
+}
+
+/**
+ * Create a visual clash effect at the clash point
+ */
+export function createClashEffect(scene: Scene, position: Vector3): void {
+  // Create multiple spark particles in different directions
+  const sparkCount = 15;
+  
+  for (let i = 0; i < sparkCount; i++) {
+    // Random direction
+    const angle = Math.random() * Math.PI * 2;
+    const spread = Math.random() * 0.5;
+    
+    const direction = new Vector3(
+      Math.cos(angle) * spread,
+      Math.random() * 0.5 - 0.25, // Some vertical variation
+      Math.sin(angle) * spread
+    ).normalize();
+    
+    // Random size and color
+    const size = 0.05 + Math.random() * 0.05;
+    const color = 0xFFFFFF; // White sparks
+    const lifetime = 300 + Math.random() * 200;
+    
+    createHitEffect(
+      scene,
+      position.clone(),
+      size,
+      color,
+      direction,
+      0.2 + Math.random() * 0.3, // Speed
+      lifetime
+    );
+  }
+  
+  // Add a central flash
+  createHitEffect(
+    scene,
+    position.clone(),
+    0.2,
+    0xFFFFFF,
+    undefined,
+    0,
+    150
+  );
 }

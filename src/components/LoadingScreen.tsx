@@ -55,7 +55,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-50">
       <div className="text-center space-y-6">
-        <h1 className="text-5xl font-bold text-blue-500">Lightsaber Duel</h1>
+        <h1 className="text-5xl font-bold text-blue-500">Plasmablade Duel</h1>
         <div className="w-64 h-2 bg-gray-800 rounded-full overflow-hidden">
           <div 
             className="h-full bg-blue-500 transition-all duration-300 ease-out"

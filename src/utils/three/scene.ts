@@ -28,6 +28,7 @@ import { Player } from './player';
 import { Enemy } from './enemy';
 import { CombatSystem } from './combat';
 import gameAudio from './audio';
+import { createClashEffect, closestPointsBetweenLines } from './combat';
 
 export class GameScene {
   private container: HTMLElement;
@@ -44,6 +45,8 @@ export class GameScene {
   private onLoadProgress: (progress: number) => void;
   private onLoadComplete: () => void;
   private backgroundMusic: any = null;
+  private debugMode: boolean = true; // Default to true
+  private frameCount: number = 0;
   
   constructor(
     container: HTMLElement,
@@ -75,10 +78,20 @@ export class GameScene {
     this.setupCamera();
     
     // Create player (needs camera reference)
-    this.player = new Player(this.camera, this.scene);
+    this.player = new Player(this.scene, this.camera);
+    this.scene.add(this.player);
+    
+    // Pass debug mode to player
+    this.player.setDebugMode(this.debugMode);
+    
+    // Position player slightly above ground
+    this.player.position.set(0, 0.1, 0); // Start slightly above ground plane y=0
     
     // Create combat system (needs player and scene references)
     this.combatSystem = new CombatSystem(this.scene, this.player);
+    console.log('Checking combatSystem:', this.combatSystem, typeof this.combatSystem.setDebugMode);
+    this.combatSystem.setDebugMode(this.debugMode);
+    this.combatSystem.setCamera(this.camera); // Pass camera for potential use
     
     // Setup event listeners
     this.setupEventListeners();
@@ -118,14 +131,16 @@ export class GameScene {
       this._isInitialized = true;
       console.log("Game initialization complete");
       
-      // Start animation loop
-      this.animate();
-      console.log("Animation loop started");
-      
       // Trigger complete callback
       if (this.onLoadComplete) {
         this.onLoadComplete();
       }
+
+      // --- TEMPORARY DEBUG: Start animation immediately after init ---
+      console.log("!!! DEBUG: Forcing start() after initialize !!!");
+      this.start(); 
+      // --- END TEMPORARY DEBUG ---
+
     } catch (error) {
       console.error("Error initializing game:", error);
       throw error;
@@ -133,20 +148,22 @@ export class GameScene {
   }
   
   private setupCamera(): void {
-    // Create and position the camera
-    this.camera = new PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    // Create a perspective camera with good defaults for first-person view
+    this.camera = new PerspectiveCamera(
+      75, // Field of view
+      window.innerWidth / window.innerHeight, // Aspect ratio
+      0.1, // Near clipping plane
+      1000 // Far clipping plane
+    );
     
-    // Position the camera higher and further back to see the scene clearly
-    this.camera.position.set(0, 5, 8); // Higher and further back
-    this.camera.lookAt(0, 0, 0); // Look at the center
+    // Set initial relative position (will be overridden when added to player)
+    this.camera.position.set(0, 0, 0); 
+    console.log("Camera created");
     
-    // Create controls
+    // Initialize pointer lock controls
     this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
     
-    // Add camera to scene for reference
-    this.scene.add(this.camera);
-    
-    console.log("Camera positioned at:", this.camera.position);
+    // Event listeners for lock/unlock are handled in setupEventListeners
   }
   
   private setupLighting(): void {
@@ -294,6 +311,23 @@ export class GameScene {
     this.controls.addEventListener('unlock', () => {
       console.log('Controls unlocked');
     });
+
+    // Player events
+    (this.player as any).addEventListener('healthChanged', (e: any) => {
+      const event = new CustomEvent('playerHealthChanged', {
+        detail: { health: e.health, maxHealth: e.maxHealth }
+      });
+      window.dispatchEvent(event);
+    });
+
+    // Enemy events
+    window.addEventListener('enemyHealthChanged', (e: any) => {
+      this.updateEnemyHealthBar(e.detail.health, e.detail.maxHealth);
+    });
+
+    window.addEventListener('enemyRespawned', (e: any) => {
+      e.detail.enemy.resetPosition();
+    });
   }
   
   private onWindowResize(): void {
@@ -303,41 +337,76 @@ export class GameScene {
   }
   
   public animate(): void {
-    if (!this.isAnimating) {
-      this.isAnimating = true;
-    }
-    
-    requestAnimationFrame(this.animate.bind(this));
-    
-    // Get delta time
+    // Log every time animate is entered, before the isAnimating check
+    console.log(`--- animate() entered | isAnimating: ${this.isAnimating} | frame: ${this.frameCount} ---`); 
+    if (!this.isAnimating) return; 
+    requestAnimationFrame(this.animate.bind(this)); 
+
     const deltaTime = this.clock.getDelta();
-    
-    // Update player
-    if (this.player) {
-      this.player.update(deltaTime);
+
+    // Log periodically to confirm loop is running
+    if (this.frameCount === undefined) this.frameCount = 0; 
+    if (this.frameCount % 120 === 0 && this.debugMode) { 
+       console.log(`Animate loop running... Frame: ${this.frameCount}, Delta: ${deltaTime.toFixed(4)}`);
     }
-    
-    // FIXED: Update enemies with proper parameters
-    for (const enemy of this.enemies) {
-      if (enemy && typeof enemy.update === 'function') {
+    this.frameCount++;
+
+    try {
+      // Update game objects
+      if (this.player) {
         try {
-          // Explicitly pass player position and direction
-          const playerPos = this.player.getPosition();
-          const playerDir = this.player.getDirection();
-          enemy.update(deltaTime, playerPos, playerDir);
-        } catch (error) {
-          console.warn("Error updating enemy:", error);
+          this.player.update(deltaTime);
+        } catch (playerUpdateError) {
+          console.error("Error during player.update:", playerUpdateError);
+          this.isAnimating = false; // Stop on error
+          return;
         }
       }
+      
+      this.enemies.forEach(enemy => {
+        if (enemy && this.player) {
+          try {
+            enemy.update(deltaTime, this.player.position, this.player.getWorldDirection(new Vector3()));
+          } catch (enemyUpdateError) {
+            console.error(`Error during enemy.update (ID: ${enemy.id}):`, enemyUpdateError);
+            this.isAnimating = false; // Stop on error
+            // Note: returning here only exits the forEach callback, not animate()
+            // We set isAnimating = false, so the next frame check will stop it.
+          }
+        }
+      });
+      // Check isAnimating again in case enemy update stopped it
+      if (!this.isAnimating) return; 
+
+      if (this.combatSystem) {
+        try {
+          this.combatSystem.update(deltaTime);
+        } catch (combatUpdateError) {
+          console.error("Error during combatSystem.update:", combatUpdateError);
+          this.isAnimating = false; // Stop on error
+          return;
+        }
+      }
+
+      // Add an enhanced collision detection system
+      this.checkLightsaberCollisions(deltaTime);
+    } catch (updatePhaseError) {
+      // Catch any unexpected errors during the update phase logic itself
+      console.error("Error during main update phase:", updatePhaseError);
+      this.isAnimating = false;
+      return;
     }
-    
-    // Update combat system
-    if (this.combatSystem) {
-      this.combatSystem.update(deltaTime);
-    }
-    
     // Render the scene
-    this.renderer.render(this.scene, this.camera);
+    try {
+      this.renderer.render(this.scene, this.camera);
+      // Log successful render periodically
+      if (this.frameCount % 120 === 1 && this.debugMode) {
+         console.log("Scene rendered successfully.");
+      }
+    } catch (renderError) {
+      console.error("Error during render:", renderError);
+      this.isAnimating = false; // Stop animation on error
+    }
   }
   
   unlockControls(): void {
@@ -516,14 +585,16 @@ export class GameScene {
     console.log("- isInitialized:", this._isInitialized);
     console.log("- isAnimating:", this.isAnimating);
     console.log("- container:", this.container);
-    console.log("- camera position:", this.camera?.position);
-    console.log("- scene children:", this.scene?.children.length);
+    console.log("- camera position:", this.camera ? this.camera.getWorldPosition(new Vector3()) : 'N/A');
+    console.log("- scene children:", this.scene ? this.scene.children.length : 'N/A');
     console.log("- renderer:", this.renderer);
-    
-    // Check if renderer canvas is in DOM
     if (this.renderer) {
-      const canvas = this.renderer.domElement;
-      console.log("- canvas in DOM:", document.body.contains(canvas));
+      console.log("- canvas element:", this.renderer.domElement);
+      console.log("- canvas size:", this.renderer.domElement.width, "x", this.renderer.domElement.height);
+      console.log("- canvas style size:", this.renderer.domElement.style.width, "x", this.renderer.domElement.style.height);
+      console.log("- canvas in DOM:", document.body.contains(this.renderer.domElement));
+    } else {
+      console.log("- renderer not available for canvas check");
     }
   }
   
@@ -543,8 +614,186 @@ export class GameScene {
     this.createEnvironment();
     console.log("Environment created");
 
-    // Add debug elements if in debug mode
+    // Create UI elements including health display
+    this.createModernHealthDisplay();
+    
     this.addDebugElements(true);
+
+    // Add basic lighting
+    const ambientLight = new AmbientLight(0xffffff, 0.5); // Soft white light
+    this.scene.add(ambientLight);
+
+    const directionalLight = new DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(5, 10, 7.5);
+    directionalLight.castShadow = true; // Enable shadows
+    // Configure shadow properties (optional but good)
+    directionalLight.shadow.mapSize.width = 1024;
+    directionalLight.shadow.mapSize.height = 1024;
+    directionalLight.shadow.camera.near = 0.5;
+    directionalLight.shadow.camera.far = 50;
+    this.scene.add(directionalLight);
+    console.log("Basic lighting added to scene");
+
+    // Add ground plane (optional but helpful for orientation)
+    const groundGeo = new PlaneGeometry(100, 100);
+  }
+  
+  private createModernHealthDisplay(): void {
+    // Remove any existing health displays
+    const existingHealthElements = document.querySelectorAll('[id$="-health-container"], [id$="-health-modern"]');
+    existingHealthElements.forEach(element => element.remove());
+    
+    // Hide the React-based health display in Game.tsx
+    const style = document.createElement('style');
+    style.textContent = `
+      .player-health, .enemy-health, .vs-text {
+        display: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    // Create health display container
+    const healthContainer = document.createElement('div');
+    healthContainer.style.position = 'absolute';
+    healthContainer.style.top = '20px';
+    healthContainer.style.left = '50%';
+    healthContainer.style.transform = 'translateX(-50%)';
+    healthContainer.style.display = 'flex';
+    healthContainer.style.gap = '20px';
+    
+    // Player health
+    const playerHealth = document.createElement('div');
+    playerHealth.id = 'player-health-modern';
+    playerHealth.innerHTML = `
+      <div style="color: white; margin-bottom: 5px; text-align: center; font-weight: bold; text-shadow: 0 0 3px #3366ff">PLAYER</div>
+      <div style="width: 200px; height: 20px; background: #222">
+        <div id="player-health-bar" style="width: 100%; height: 100%; background: #3366ff; transition: width 0.3s; border-radius:15px;"></div>
+      </div>
+    `;
+    
+    // Enemy health
+    const enemyHealth = document.createElement('div');
+    enemyHealth.id = 'enemy-health-modern';
+    enemyHealth.innerHTML = `
+      <div style="color: white; margin-bottom: 5px; text-align: center; font-weight: bold; text-shadow: 0 0 3px #ff3333">ENEMY</div>
+      <div style="width: 200px; height: 20px; background: #222">
+        <div id="enemy-health-bar" style="width: 100%; height: 100%; background: #ff0000; transition: width 0.3s; border-radius:15px;"></div>
+      </div>
+    `;
+    
+    healthContainer.appendChild(playerHealth);
+    healthContainer.appendChild(enemyHealth);
+    this.container.appendChild(healthContainer);
+    
+    // Add lightsaber color picker
+    this.createLightsaberColorPicker();
+    
+    // Immediately dispatch initial health events to set the bars
+    window.dispatchEvent(new CustomEvent('playerHealthChanged', {
+      detail: {
+        health: this.player.getHealth(),
+        maxHealth: this.player.getMaxHealth()
+      }
+    }));
+    
+    if (this.enemies.length > 0) {
+      window.dispatchEvent(new CustomEvent('enemyHealthChanged', {
+        detail: {
+          health: this.enemies[0].getHealth(),
+          maxHealth: this.enemies[0].getMaxHealth()
+        }
+      }));
+    }
+    
+    // Event listeners for health updates
+    window.addEventListener('playerHealthChanged', (e: CustomEvent) => {
+      const bar = document.getElementById('player-health-bar');
+      if (bar) {
+        const percent = (e.detail.health / e.detail.maxHealth) * 100;
+        bar.style.width = `${percent}%`;
+      }
+    });
+
+    window.addEventListener('enemyHealthChanged', (e: CustomEvent) => {
+      const bar = document.getElementById('enemy-health-bar');
+      if (bar) {
+        const percent = (e.detail.health / e.detail.maxHealth) * 100;
+        bar.style.width = `${percent}%`;
+      }
+    });
+  }
+  
+  private createLightsaberColorPicker(): void {
+    // Create color picker container
+    const colorPickerContainer = document.createElement('div');
+    colorPickerContainer.style.position = 'absolute';
+    colorPickerContainer.style.bottom = '20px';
+    colorPickerContainer.style.left = '50%';
+    colorPickerContainer.style.transform = 'translateX(-50%)';
+    colorPickerContainer.style.display = 'flex';
+    colorPickerContainer.style.flexDirection = 'column';
+    colorPickerContainer.style.alignItems = 'center';
+    colorPickerContainer.style.gap = '10px';
+    colorPickerContainer.style.background = 'rgba(0, 0, 0, 0.5)';
+    colorPickerContainer.style.padding = '10px';
+    colorPickerContainer.style.borderRadius = '8px';
+    
+    // Add title
+    const title = document.createElement('div');
+    title.textContent = 'LIGHTSABER COLOR';
+    title.style.color = 'white';
+    title.style.fontWeight = 'bold';
+    title.style.textShadow = '0 0 3px #fff';
+    colorPickerContainer.appendChild(title);
+    
+    // Create color options
+    const colors = [
+      { name: 'Blue', value: '#3366ff' },
+      { name: 'Green', value: '#33ff66' },
+      { name: 'Red', value: '#ff3333' },
+      { name: 'Purple', value: '#9933ff' },
+      { name: 'Yellow', value: '#ffcc33' },
+      { name: 'White', value: '#ffffff' }
+    ];
+    
+    // Create color buttons container
+    const colorButtons = document.createElement('div');
+    colorButtons.style.display = 'flex';
+    colorButtons.style.gap = '8px';
+    
+    colors.forEach(color => {
+      const button = document.createElement('button');
+      button.style.width = '30px';
+      button.style.height = '30px';
+      button.style.background = color.value;
+      button.style.border = '2px solid white';
+      button.style.borderRadius = '50%';
+      button.style.cursor = 'pointer';
+      button.style.boxShadow = `0 0 10px ${color.value}`;
+      button.title = color.name;
+      
+      button.addEventListener('click', () => {
+        // Update lightsaber color
+        if (this.player && this.player.getLightsaber()) {
+          this.player.getLightsaber().setColor(color.value);
+        }
+        
+        // Update active button style
+        document.querySelectorAll('#lightsaber-color-picker button').forEach(btn => {
+          (btn as HTMLElement).style.transform = 'scale(1)';
+          (btn as HTMLElement).style.boxShadow = `0 0 10px ${(btn as HTMLElement).style.background}`;
+        });
+        
+        button.style.transform = 'scale(1.2)';
+        button.style.boxShadow = `0 0 15px ${color.value}`;
+      });
+      
+      colorButtons.appendChild(button);
+    });
+    
+    colorPickerContainer.appendChild(colorButtons);
+    colorPickerContainer.id = 'lightsaber-color-picker';
+    this.container.appendChild(colorPickerContainer);
   }
   
   private async loadAssets(): Promise<void> {
@@ -577,16 +826,176 @@ export class GameScene {
   private setupPlayer(): void {
     console.log("Setting up player");
     
-    // Position player properly
-    this.player.position.set(0, 1.7, 0);
+    // Restore first-person view by making camera a child of player
+    // Set camera position *before* adding it to the player
+    this.camera.position.set(0, 1.7, 0); // Eye level relative to player base (0,0,0)
+    this.player.add(this.camera);
+    console.log("Camera added as child of player in setupPlayer");
     
-    // Set player name for easy reference
-    this.player.name = 'player';
-    
-    // Set camera for the combat system
-    this.combatSystem.setCamera(this.camera);
+    // Activate the lightsaber if needed
+    try {
+      if (this.player.getLightsaber() && typeof this.player.getLightsaber().activate === 'function') {
+        this.player.getLightsaber().activate();
+      }
+    } catch (error) {
+      console.warn("Failed to activate player lightsaber:", error);
+    }
     
     console.log("Player positioned at:", this.player.position);
+    console.log("Camera world position after adding to player:", this.camera.getWorldPosition(new Vector3()));
+  }
+
+  // Add a method to update enemy health UI
+  private updateEnemyHealthBar(health: number, maxHealth: number): void {
+    // Find or create enemy health bar element
+    let healthBar = document.getElementById('enemy-health-bar');
+    if (!healthBar) {
+      healthBar = document.createElement('div');
+      healthBar.id = 'enemy-health-bar';
+      healthBar.style.position = 'absolute';
+      healthBar.style.top = '70px';
+      healthBar.style.left = '50%';
+      healthBar.style.transform = 'translateX(-50%)';
+      healthBar.style.width = '200px';
+      healthBar.style.height = '10px';
+      healthBar.style.background = '#333';
+      healthBar.style.border = '1px solid #666';
+      
+      const fill = document.createElement('div');
+      fill.id = 'enemy-health-fill';
+      fill.style.height = '100%';
+      fill.style.width = '100%';
+      fill.style.backgroundColor = '#ff3333';
+      fill.style.transition = 'width 0.3s';
+      
+      healthBar.appendChild(fill);
+      this.container.appendChild(healthBar);
+    }
+    
+    // Update health bar fill width
+    const fillElement = document.getElementById('enemy-health-fill');
+    if (fillElement) {
+      const healthPercent = Math.max(0, Math.min(100, (health / maxHealth) * 100));
+      fillElement.style.width = `${healthPercent}%`;
+      
+      // Change color based on health level
+      if (healthPercent > 60) {
+        fillElement.style.backgroundColor = '#ff3333'; // Full red for enemy
+      } else if (healthPercent > 30) {
+        fillElement.style.backgroundColor = '#ff6633'; // Orange-red
+      } else {
+        fillElement.style.backgroundColor = '#ff9933'; // Yellow-orange
+      }
+    }
+  }
+
+  // Method to update debug mode
+  setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
+    // Propagate to relevant objects
+    if (this.player) this.player.setDebugMode(enabled);
+    if (this.combatSystem) this.combatSystem.setDebugMode(enabled);
+    this.enemies.forEach(enemy => enemy.setDebugMode(enabled));
+    // Optionally toggle helpers
+    const axesHelper = this.scene.getObjectByName('axesHelper');
+    if (axesHelper) axesHelper.visible = enabled;
+    const gridHelper = this.scene.getObjectByName('gridHelper');
+    if (gridHelper) gridHelper.visible = enabled;
+  }
+
+  // Method to start the game loop and music
+  start(): void {
+    if (!this.isInitialized) {
+      console.error("Cannot start game: Scene not initialized.");
+      return;
+    }
+    if (this.isAnimating) {
+      console.log("Animation already running.");
+      return; // Don't start if already running
+    }
+    
+    console.log("Starting game elements...");
+    this.isAnimating = true;
+    this.clock.start(); // Ensure the clock is running before the first frame
+    this.animate(); // <<< START the animation loop here
+  }
+
+  // Add a getter to expose the player directly
+  get player(): Player {
+    return this._player;
+  }
+
+  // Improved checkLightsaberCollisions method
+  private checkLightsaberCollisions(deltaTime: number): void {
+    // We need both a player and at least one enemy
+    if (!this._player || this.enemies.length === 0) return;
+    
+    // Get the first enemy for now (could iterate through all enemies later)
+    const enemy = this.enemies[0];
+    
+    // Only check collisions if both player and enemy exist and both have a lightsaber
+    if (!enemy || !this._player) return;
+    
+    // Get their current states
+    const playerState = this._player.getState();
+    const enemyState = enemy.getState();
+    
+    // Only check for clash if both are in a state where clash can happen
+    const playerCanClash = playerState === 'attacking' || playerState === 'blocking';
+    const enemyCanClash = enemyState === 'attacking' || enemyState === 'blocking';
+    
+    if (!playerCanClash || !enemyCanClash) return;
+    
+    // Skip if either is in cooldown
+    const playerInCooldown = (this._player as any).isInClashCooldown || false;
+    const enemyInCooldown = (enemy as any).isInClashCooldown || false;
+    
+    if (playerInCooldown && enemyInCooldown) return;
+    
+    // Get blade positions for collision check
+    try {
+      const playerBladeStart = this._player.getLightsaberHiltPosition();
+      const playerBladeEnd = this._player.getLightsaberTipPosition();
+      const enemyBladeStart = enemy.getLightsaberHiltPosition();
+      const enemyBladeEnd = enemy.getLightsaberTipPosition();
+      
+      // Debug log
+      console.log("Checking blade clash between:", 
+        playerBladeStart, playerBladeEnd, 
+        enemyBladeStart, enemyBladeEnd
+      );
+      
+      // Calculate closest points between the two blade segments
+      const { point1, point2, distance } = closestPointsBetweenLines(
+        playerBladeStart, playerBladeEnd,
+        enemyBladeStart, enemyBladeEnd
+      );
+      
+      // Debug distance
+      console.log("🗡️ Blade distance:", distance);
+      
+      // If blades are close enough, trigger clash
+      const CLASH_THRESHOLD = 0.2; // How close blades need to be to clash
+      if (distance < CLASH_THRESHOLD) {
+        console.log("⚔️ LIGHTSABER CLASH DETECTED!");
+        
+        // Calculate clash point (midpoint between closest points)
+        const clashPoint = new Vector3().addVectors(point1, point2).multiplyScalar(0.5);
+        
+        // Calculate recoil directions (away from clash point)
+        const playerRecoilDir = this._player.position.clone().sub(clashPoint).normalize();
+        const enemyRecoilDir = enemy.position.clone().sub(clashPoint).normalize();
+        
+        // Handle clash for both combatants
+        this._player.handleBladeClash(clashPoint, playerRecoilDir);
+        enemy.handleBladeClash(clashPoint, enemyRecoilDir);
+        
+        // Create visual effects at clash point
+        createClashEffect(this.scene, clashPoint);
+      }
+    } catch (error) {
+      console.error("Error in lightsaber clash detection:", error);
+    }
   }
 
   // Add public getter method for isInitialized

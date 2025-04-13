@@ -4,6 +4,7 @@ import LoadingScreen from './LoadingScreen';
 import { GameScene } from '@/utils/three/scene';
 import gameAudio from '@/utils/three/audio';
 import { toast } from 'sonner';
+import StanceSelector from './StanceSelector';
 
 interface GameState {
   isLoading: boolean;
@@ -61,48 +62,35 @@ const Game: React.FC = () => {
       
       const onLoadComplete = () => {
         console.log("Loading complete callback triggered!");
-        // Add a small timeout to ensure UI updates properly
-        setTimeout(() => {
-          setGameState(prev => ({ 
-            ...prev, 
-            isLoading: false,
-            sceneReady: true
-          }));
-        }, 1000);
+        // No delay needed if scene init handles it
+        setGameState(prev => ({ 
+          ...prev, 
+          isLoading: false, 
+          loadingProgress: 1,
+          sceneReady: true // Mark scene as ready
+        }));
       };
       
+      // Clean up previous scene if exists
+      if (gameSceneRef.current) {
+        gameSceneRef.current.dispose();
+      }
+      
+      // Create new scene instance
+      gameSceneRef.current = new GameScene(
+        containerRef.current,
+        onLoadProgress,
+        onLoadComplete
+      );
+      
+      // Initialize the scene
       try {
-        // Remove any previous game scene
-        if (gameSceneRef.current) {
-          gameSceneRef.current.cleanup();
-          gameSceneRef.current = null;
-        }
-        
-        // Create the game scene
-        const gameScene = new GameScene(
-          containerRef.current,
-          onLoadProgress,
-          onLoadComplete
-        );
-        
-        // Store the game scene reference immediately
-        gameSceneRef.current = gameScene;
-        console.log("Game scene created, initializing...");
-        
-        // Initialize the game scene
-        await gameScene.initialize();
-        
-        // Force enable debug view to fix visibility issues
-        setTimeout(() => {
-          if (gameSceneRef.current) {
-            gameSceneRef.current.enableDebugView();
-            console.log("Debug view enabled in game initialization");
-          }
-        }, 500);
-        
+        await gameSceneRef.current.initialize();
+        // Pass initial debug state
+        gameSceneRef.current.setDebugMode(gameState.debugMode); 
         console.log("Game scene initialized successfully");
       } catch (error) {
-        console.error("Failed to initialize game:", error);
+        console.error("Error initializing game:", error);
         setGameState(prev => ({ 
           ...prev, 
           hasError: true, 
@@ -218,35 +206,110 @@ const Game: React.FC = () => {
   };
   
   const toggleDebugMode = () => {
-    setGameState(prev => ({
-      ...prev,
-      debugMode: !prev.debugMode
-    }));
-    
-    if (gameSceneRef.current) {
-      if (gameState.debugMode) {
-        gameSceneRef.current.disableDebugView();
-      } else {
-        gameSceneRef.current.enableDebugView();
-      }
-    }
+    setGameState(prev => {
+      const newDebugMode = !prev.debugMode;
+      // Update debug mode in the scene
+      gameSceneRef.current?.setDebugMode(newDebugMode); 
+      console.log(`Debug mode toggled: ${newDebugMode}`);
+      return { ...prev, debugMode: newDebugMode };
+    });
   };
   
   useEffect(() => {
     if (gameSceneRef.current && gameSceneRef.current.isInitialized) {
       console.log("Debugging game scene from Game component");
       gameSceneRef.current.debug();
-      
-      // Force a re-render of the scene if it's not visible
-      setTimeout(() => {
-        if (gameSceneRef.current) {
-          console.log("Forcing animation restart after delay");
-          gameSceneRef.current.animate();
-        }
-      }, 1000);
     }
   }, [gameState.isStarted]);
   
+  // Add this component for the scoreboard
+  const Scoreboard = ({ playerScore, enemyScore }) => {
+    return (
+      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-6 py-2 rounded-lg flex items-center gap-8 font-mono text-xl">
+        <div className="flex flex-col items-center">
+          <span className="text-blue-400">PLAYER</span>
+          <span className="text-2xl font-bold">{playerScore}</span>
+        </div>
+        <div className="text-gray-400 text-2xl">VS</div>
+        <div className="flex flex-col items-center">
+          <span className="text-red-400">ENEMY</span>
+          <span className="text-2xl font-bold">{enemyScore}</span>
+        </div>
+      </div>
+    );
+  };
+
+  // Add state for scores in your Game component
+  const [playerScore, setPlayerScore] = useState(0);
+  const [enemyScore, setEnemyScore] = useState(0);
+
+  // Add event listeners for score changes
+  useEffect(() => {
+    const handlePlayerScoreChange = (event) => {
+      setPlayerScore(event.detail.score);
+    };
+    
+    const handleEnemyScoreChange = (event) => {
+      setEnemyScore(event.detail.score);
+    };
+    
+    document.addEventListener('playerScoreChanged', handlePlayerScoreChange);
+    document.addEventListener('enemyScoreChanged', handleEnemyScoreChange);
+    
+    return () => {
+      document.removeEventListener('playerScoreChanged', handlePlayerScoreChange);
+      document.removeEventListener('enemyScoreChanged', handleEnemyScoreChange);
+    };
+  }, []);
+
+  // Add state for stance
+  const [currentStance, setCurrentStance] = useState(1);
+  const [stances, setStances] = useState([
+    { id: 1, name: "Form I:", description: "Balanced, fundamental form" },
+    { id: 2, name: "Form II:", description: "Precision dueling form" },
+    { id: 3, name: "Form III:", description: "Ultimate defensive form" },
+    { id: 4, name: "Form IV:", description: "Acrobatic, aggressive form" },
+    { id: 5, name: "Form V:", description: "Power counterattacks" },
+    { id: 6, name: "Form VI:", description: "Balanced form with Force techniques" },
+    { id: 7, name: "Form VII:", description: "Ferocious, unpredictable form" }
+  ]);
+
+  // Add listener for stance changes from player
+  useEffect(() => {
+    const handleStanceChange = (event) => {
+      setCurrentStance(event.detail.stance.id);
+    };
+    
+    document.addEventListener('stanceChanged', handleStanceChange);
+    
+    return () => {
+      document.removeEventListener('stanceChanged', handleStanceChange);
+    };
+  }, []);
+
+  // Add handler for stance selection from UI
+  const handleSelectStance = useCallback((stanceId: number) => {
+    console.log(`Attempting to select stance: ${stanceId}`);
+    
+    if (!gameSceneRef.current) {
+      console.error("No game scene available");
+      return;
+    }
+    
+    // Direct access to player instance from our scene reference
+    const player = gameSceneRef.current.player;
+    if (player) {
+      console.log("Player found, setting stance to:", stanceId);
+      // Call the setStance method with the right context
+      player.setStance(stanceId);
+      
+      // Also update local state for UI
+      setCurrentStance(stanceId);
+    } else {
+      console.error("Player not found in gameScene");
+    }
+  }, [gameSceneRef]);
+
   return (
     <div className="relative w-full h-full">
       {gameState.hasError && (
@@ -334,7 +397,7 @@ const Game: React.FC = () => {
           className="absolute inset-0 flex items-center justify-center bg-black/80 z-30"
         >
           <div className="text-center p-8 bg-gray-900/80 rounded-lg">
-            <h1 className="text-4xl font-bold text-blue-500 mb-6">Lightsaber Duel</h1>
+            <h1 className="text-4xl font-bold text-blue-500 mb-6">Plasmablade Duel</h1>
             <p className="text-gray-300 mb-8">Prepare for battle!</p>
             <button 
               onClick={handleGameStart} 
@@ -399,6 +462,18 @@ const Game: React.FC = () => {
             </button>
           </div>
         </motion.div>
+      )}
+      
+      {/* Scoreboard */}
+      {gameState.isStarted && <Scoreboard playerScore={playerScore} enemyScore={enemyScore} />}
+      
+      {/* Stance Selector */}
+      {gameState.isStarted && !gameState.victory && !gameState.gameOver && (
+        <StanceSelector 
+          stances={stances}
+          currentStance={currentStance}
+          onSelectStance={handleSelectStance}
+        />
       )}
     </div>
   );

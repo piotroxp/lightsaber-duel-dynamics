@@ -151,30 +151,132 @@ export class ParticleEmitter extends Group {
       }
     }
   }
+
+  setColor(color: number): void {
+    // Update the color for all particles
+    this.options.color = color;
+    
+    // Update existing particles
+    this.particles.forEach(particle => {
+      if (particle.material instanceof MeshBasicMaterial) {
+        particle.material.color.setHex(color);
+      }
+    });
+  }
+
+  setActive(active: boolean): void {
+    this.isActive = active;
+  }
 }
 
 // Create a simple hit effect
-export function createHitEffect(scene: Scene, position: Vector3, color: string = '#ff0000'): void {
-  const colorValue = color.startsWith('#') ? parseInt(color.replace('#', '0x')) : 0xff0000;
-  
-  const emitter = new ParticleEmitter({
-    count: 20,
-    size: 0.05,
-    color: colorValue,
-    lifetime: 0.5,
-    speed: 2,
-    direction: new Vector3(0, 1, 0),
-    spread: 1
+export function createHitEffect(
+  scene: Scene, 
+  position: Vector3, 
+  size: number = 0.1, 
+  color: number = 0xFFFFFF,
+  direction?: Vector3,
+  speed: number = 0,
+  lifetime: number = 300
+): void {
+  // Create a mesh for the hit effect
+  const geometry = new SphereGeometry(size, 8, 8);
+  const material = new MeshBasicMaterial({ 
+    color: color,
+    transparent: true,
+    opacity: 1.0 
   });
   
-  emitter.position.copy(position);
-  scene.add(emitter);
-  emitter.start();
+  const hitEffect = new Mesh(geometry, material);
+  hitEffect.position.copy(position);
   
-  // Remove after effect is done
-  setTimeout(() => {
-    scene.remove(emitter);
-  }, 500);
+  // Add to scene
+  scene.add(hitEffect);
+  
+  // Set up animation
+  const startTime = performance.now();
+  const velocity = direction ? direction.clone().multiplyScalar(speed) : new Vector3();
+  
+  const animateParticle = () => {
+    const now = performance.now();
+    const elapsed = now - startTime;
+    const progress = elapsed / lifetime;
+    
+    if (progress >= 1) {
+      // Remove effect when animation completes
+      scene.remove(hitEffect);
+      geometry.dispose();
+      material.dispose();
+      return;
+    }
+    
+    // Update position based on velocity and gravity
+    if (velocity.length() > 0) {
+      hitEffect.position.add(velocity);
+      velocity.y -= 0.001; // Simple gravity
+    }
+    
+    // Fade out and scale down
+    material.opacity = 1 - progress;
+    const scale = 1 - (progress * 0.5);
+    hitEffect.scale.set(scale, scale, scale);
+    
+    // Continue animation
+    requestAnimationFrame(animateParticle);
+  };
+  
+  // Start animation
+  requestAnimationFrame(animateParticle);
+}
+
+// Create a more intense clash effect with multiple particles
+export function createClashEffect(
+  scene: Scene,
+  position: Vector3,
+  intensity: number = 1.0
+): void {
+  // Create center flash
+  createHitEffect(
+    scene,
+    position.clone(),
+    0.15 * intensity,
+    0xFFFFFF,
+    undefined,
+    0,
+    200
+  );
+  
+  // Create spark shower
+  const sparkCount = Math.floor(15 * intensity);
+  for (let i = 0; i < sparkCount; i++) {
+    // Calculate random direction
+    const angle = Math.random() * Math.PI * 2;
+    const elevation = (Math.random() - 0.3) * Math.PI; // Bias upward
+    
+    const direction = new Vector3(
+      Math.cos(angle) * Math.cos(elevation),
+      Math.sin(elevation),
+      Math.sin(angle) * Math.cos(elevation)
+    );
+    
+    // Randomize properties
+    const size = 0.02 + Math.random() * 0.04 * intensity;
+    const speed = 0.01 + Math.random() * 0.05 * intensity;
+    const lifetime = 300 + Math.random() * 500;
+    
+    // Create spark with slight delay for better visual
+    setTimeout(() => {
+      createHitEffect(
+        scene,
+        position.clone(),
+        size,
+        0xFFFF99, // Yellowish color
+        direction,
+        speed,
+        lifetime
+      );
+    }, i * 20);
+  }
 }
 
 // Create a lightsaber clash effect

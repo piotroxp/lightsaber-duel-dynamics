@@ -1,7 +1,16 @@
-import { Group, Scene, Vector3, Mesh, BoxGeometry, MeshStandardMaterial, SphereGeometry, CylinderGeometry, Color, Quaternion, Euler, MathUtils, Object3D } from 'three';
+import { Group, Scene, Vector3, Mesh, BoxGeometry, MeshStandardMaterial, MeshBasicMaterial, SphereGeometry, CylinderGeometry, Color, Quaternion, Euler, MathUtils, Object3D } from 'three';
 import { Lightsaber } from './lightsaber';
 import { createSaberClashEffect, createHitEffect } from './effects';
 import gameAudio from './audio';
+
+// Extend Three.js event types with our custom events
+declare global {
+  namespace THREE {
+    interface Object3DEventMap {
+      [key: string]: any; // Allow any string key with any value
+    }
+  }
+}
 
 export interface EnemyOptions {
   health?: number;
@@ -30,11 +39,13 @@ export class Enemy extends Group {
   declare rotateY: (angle: number) => this;
 
   // Stats
-  private health: number;
-  private maxHealth: number;
+  private health: number = 100;
+  private maxHealth: number = 100;
+  private isDead: boolean = false;
   private speed: number;
   private attackRange: number;
   private attackDamage: number;
+  private velocity: Vector3 = new Vector3();
   
   // Combat
   private lightsaber: Lightsaber;
@@ -66,6 +77,23 @@ export class Enemy extends Group {
   
   private scene: Scene;
   
+  private isRespawning: boolean = false;
+  private respawnTimer: number = 0;
+  private respawnDelay: number = 5; // 5 seconds to respawn
+  
+  private lastRespawnTime: number = 0;
+  
+  // Add these damage visual indicators
+  private damageMarks: Mesh[] = [];
+  
+  private debugMode: boolean = true;
+  
+  private bobTime: number = 0; // For walking animation
+  
+  // Add clash properties to the Enemy class
+  private isInClashCooldown: boolean = false;
+  private clashCooldownTime: number = 0;
+  
   constructor(scene: Scene, options: EnemyOptions = {}) {
     super();
     
@@ -76,178 +104,269 @@ export class Enemy extends Group {
     this.health = options.health || 100;
     this.speed = options.speed || 2.0;
     this.attackRange = options.attackRange || 2.0;
-    this.attackDamage = options.attackDamage || 10;
+    this.attackDamage = options.attackDamage || 15;
     
     // Create enemy body
     this.createBody();
     
-    // Create lightsaber
+    // Create lightsaber with more dramatic parameters
     this.lightsaber = new Lightsaber({
-      color: options.lightsaberColor || '#ff0000',
-      bladeLength: 1.2,
-      hiltLength: 0.2
+      color: '#ff0000', // Force red color for enemy lightsabers
+      bladeLength: 1.5,
+      hiltLength: 0.25,
+      glowIntensity: 1.5
     });
-    this.lightsaber.position.set(0.4, 0.9, 0.2);
-    this.lightsaber.rotateY(Math.PI * 0.25);
+    
+    // CRITICAL FIX: Position lightsaber clearly in hand
+    this.lightsaber.position.set(0.6, 1.1, 0.3);
+    this.lightsaber.rotateZ(-Math.PI / 6);
     this.add(this.lightsaber);
     
-    // Activate lightsaber
-    this.lightsaber.activate();
+    // Ensure lightsaber is active and visible
+    setTimeout(() => {
+      if (this.lightsaber) {
+        this.lightsaber.activate();
+        this.lightsaber.setColor('#ff0000'); // Force red color again after activation
+        console.log("Enemy lightsaber activated");
+      }
+    }, 500);
+    
+    // Name the enemy for easy reference
+    this.name = "enemy";
   }
   
   update(deltaTime: number, playerPosition: Vector3, playerDirection: Vector3): void {
-    if (!this.isAlive()) return;
+    const previousY = this.position.y; // Store previous Y
+    
+    if (this.debugMode && Math.random() < 0.01) { // Example less frequent log
+       console.log(`Enemy ${this.id} State: ${this.state}`);
+    }
+    
+    // Skip if dead
+    if (this.state === EnemyState.DEAD) {
+      // Handle respawn logic
+      if (!this.isRespawning) {
+        console.log("Enemy dead, starting respawn timer");
+        this.isRespawning = true;
+        this.respawnTimer = 0;
+      } else {
+        // Count up respawn timer
+        this.respawnTimer += deltaTime;
+        
+        // Check if it's time to respawn
+        if (this.respawnTimer >= this.respawnDelay) {
+          console.log("Enemy respawning!");
+          this.respawn();
+        }
+      }
+      return;
+    }
+    
+    // CRITICAL FIX: Save target position
+    if (playerPosition) {
+      this.targetPosition.copy(playerPosition);
+    }
+    
+    // Process attack cooldown
+    if (this.attackCooldown > 0) {
+      this.attackCooldown -= deltaTime;
+    }
+    
+    // Process attack timer
+    if (this.state === EnemyState.ATTACKING) {
+      this.attackTimer += deltaTime;
+      
+      // End attack after animation time
+      if (this.attackTimer > 1.0) {
+        this.attackTimer = 0;
+        this.state = EnemyState.IDLE;
+      }
+    }
     
     // Update enemy animations
     this.updateAnimation(deltaTime);
     
-    // IMPROVED: Force aggressive AI behavior
+    // CRITICAL FIX: Ensure enemy attacks the player
     this.updateAggressive(deltaTime, playerPosition, playerDirection);
     
     // Update lightsaber
     if (this.lightsaber) {
       this.lightsaber.update(deltaTime);
     }
+    
+    // Apply simple bobbing when pursuing (walking)
+    if (this.state === EnemyState.PURSUING) {
+       this.bobTime += deltaTime * 6; // Adjust speed
+       const bobAmount = Math.sin(this.bobTime) * 0.04; // Adjust height
+       // Apply bobbing to the main group's position Y
+       this.position.y = 0.1 + bobAmount; // Base height + bob
+    } else {
+       // Smoothly return to base height when not walking
+       this.position.y = MathUtils.lerp(previousY, 0.1, 0.1);
+       this.bobTime = 0; // Reset bob timer
+    }
   }
   
   // New method to force more aggressive enemy behavior
   private updateAggressive(deltaTime: number, playerPosition: Vector3, playerDirection: Vector3): void {
-    // Skip if dead
-    if (this.state === EnemyState.DEAD) return;
+    // CRITICAL FIX: Force enemy to see the player
+    if (!playerPosition) {
+      console.error("No player position provided to enemy");
+      this.state = EnemyState.IDLE; // Go idle if no player data
+      return;
+    }
+    
+    // Save target position
+    this.targetPosition.copy(playerPosition);
     
     // Calculate distance to player
     const distanceToPlayer = this.position.distanceTo(playerPosition);
     
-    // Always face the player
-    this.lookAt(playerPosition.x, this.position.y, playerPosition.z);
+    console.log(`Enemy distance to player: ${distanceToPlayer.toFixed(2)}`);
     
-    // CRITICAL FIX: Make enemy more aggressive and ensure attacks happen
-    if (distanceToPlayer <= this.attackRange) {
-      // Get current time for cooldown
-      const currentTime = performance.now() / 1000;
+    // If player is within aggro range, move toward them
+    if (distanceToPlayer < this.aggroRange) {
+      console.log("Enemy has player in aggro range");
       
-      // FORCED ATTACK: Much more aggressive attack cycle
-      if (currentTime - this.lastAttackTime > 1.5) {
-        console.log("Enemy attempting attack!");
-        this.attack();
-        this.lastAttackTime = currentTime;
-      } else {
-        // Strafe around player between attacks
-        this.strafeAroundTarget(deltaTime, playerPosition);
-      }
-    } else if (distanceToPlayer <= this.aggroRange) {
-      // Move directly toward player at full speed
-      const moveSpeed = this.speed * deltaTime;
-      const moveDirection = new Vector3()
+      // Calculate direction to player
+      const directionToPlayer = new Vector3()
         .subVectors(playerPosition, this.position)
         .normalize();
-      moveDirection.y = 0;
       
-      // Apply movement
-      this.position.add(moveDirection.multiplyScalar(moveSpeed));
-      this.state = EnemyState.PURSUING;
+      // Look at player
+      this.lookAt(playerPosition);
+      
+      // Move toward player if not too close
+      if (distanceToPlayer > this.tooCloseRange) {
+        // Move toward player
+        const moveSpeed = this.speed; // Base speed
+        this.position.addScaledVector(directionToPlayer, moveSpeed * deltaTime);
+        this.state = EnemyState.PURSUING; // Set state to trigger walking animation
+        if (this.debugMode) console.log(`Enemy moving toward player: ${this.position.x.toFixed(2)}, ${this.position.z.toFixed(2)}`);
+      } else {
+        // If close enough but not attacking, maybe idle or prepare to attack
+        if (this.state === EnemyState.PURSUING) {
+           this.state = EnemyState.IDLE; // Stop pursuing animation when close
+        }
+      }
+      
+      // CRITICAL FIX: Perform attack when in range and cooldown is ready
+      if (distanceToPlayer < this.attackRange && this.attackCooldown <= 0) {
+        console.log("Enemy initiating attack!");
+        this.attack(); // Attack handles setting ATTACKING state
+      }
+    } else {
+      // If player is out of range and not attacking/blocking/staggered, go idle
+      if (this.state !== EnemyState.ATTACKING && this.state !== EnemyState.BLOCKING && this.state !== EnemyState.STAGGERED) {
+        this.state = EnemyState.IDLE; 
+      }
+
+      // Wander randomly when player is out of range
+      this.wanderTimer += deltaTime;
+      
+      if (this.wanderTimer > 3.0) {
+        // Reset wander timer
+        this.wanderTimer = 0;
+        
+        // Pick new random point to wander to
+        const randomAngle = Math.random() * Math.PI * 2;
+        const randomDistance = 2 + Math.random() * 3;
+        
+        this.wanderTarget.set(
+          this.position.x + Math.cos(randomAngle) * randomDistance,
+          0,
+          this.position.z + Math.sin(randomAngle) * randomDistance
+        );
+        
+        console.log("Enemy wandering to new position:", this.wanderTarget);
+      }
+      
+      // Move toward wander target
+      const directionToTarget = new Vector3()
+        .subVectors(this.wanderTarget, this.position)
+        .normalize();
+      
+      // If we're not close to the target yet, move toward it
+      if (this.position.distanceTo(this.wanderTarget) > 0.5) {
+        this.position.addScaledVector(directionToTarget, this.speed * 0.5 * deltaTime);
+        this.lookAt(this.wanderTarget);
+      }
     }
   }
   
   attack(): void {
     console.log("Enemy attack triggered!");
     
-    // Force attack regardless of state (except dead)
-    if (this.state === EnemyState.DEAD) return;
+    // Skip if dead or already attacking or cooling down
+    if (this.state === EnemyState.DEAD || this.state === EnemyState.ATTACKING || this.attackCooldown > 0) return;
     
     // Set state and timer
     this.state = EnemyState.ATTACKING;
     this.attackTimer = 0;
-    this.hasAppliedDamage = false;
+    this.setDamageAppliedInCurrentAttack(false); // Reset damage flag for new attack
     this.lastAttackTime = performance.now() / 1000;
     
-    // Get player position for targeting
-    const playerObj = this.scene.getObjectByName('player');
-    let attackDirection = new Vector3(0, 0, -1); // Default forward direction
+    // Calculate direction to target
+    const attackDirection = new Vector3()
+      .subVectors(this.targetPosition, this.position)
+      .normalize();
     
-    // Target player direction if available
-    if (playerObj) {
-      attackDirection = new Vector3()
-        .subVectors(playerObj.position, this.position)
-        .normalize();
-      
-      // Aim the swing at the player
-      this.lookAt(playerObj.position);
-    }
+    // Keep direction horizontal
+    attackDirection.y = 0;
+    attackDirection.normalize();
     
-    // CRITICAL: Force lightsaber to be active and swing if it exists
+    // Trigger lightsaber swing physics/animation
     if (this.lightsaber) {
-      // Force activate if needed
-      if (!this.lightsaber.isActive()) {
-        this.lightsaber.activate();
-      }
-      
-      // Direct swing at player
-      this.lightsaber.swingAt(attackDirection);
-      
-      // Ensure attack sound plays
-      gameAudio.playSound('lightsaberSwing', { volume: 0.8 });
+      // Use swingAt for better control over enemy swing direction
+      this.lightsaber.swingAt(0, attackDirection); // 0 for standard swing type
     }
     
-    // Reset attack state after animation completes
-    setTimeout(() => {
-      if (this.state === EnemyState.ATTACKING) {
-        this.state = EnemyState.IDLE;
-      }
-    }, 800);
-  }
-  
-  getLastAttackTime(): number {
-    return this.lastAttackTime;
-  }
-  
-  getAttackCooldown(): number {
-    return 1.5; // 1.5 seconds between attacks
-  }
-  
-  takeDamage(amount: number, hitPosition: Vector3): number {
-    // If the enemy is dead, no more damage
-    if (this.state === EnemyState.DEAD) {
-      return 0;
-    }
+    // Play swing sound
+    gameAudio.playSound('lightsaberSwing', { volume: 0.6, detune: -100 });
     
-    // If blocking and hit is from the front, reduce damage
-    if (this.blocking) {
-      // Calculate direction from enemy to hit
-      const toHit = new Vector3().subVectors(hitPosition, (this as any).position).normalize();
-      toHit.y = 0; // Only consider xz plane for blocking
+    // Set cooldown after initiating attack
+    this.attackCooldown = 1.5 + Math.random() * 1.0; // Cooldown between 1.5s and 2.5s
+  }
+  
+  takeDamage(amount: number, attackerPosition: Vector3 = new Vector3()): void {
+    // Skip if already dead
+    if (this.state === EnemyState.DEAD) return;
+    
+    this.health = Math.max(0, this.health - amount);
+    console.log(`Enemy taking ${amount} damage. Health: ${this.health}/${this.maxHealth}`);
+    
+    // Show damage visually
+    this.flashDamageVisual();
+    this.addDamageVisual();
+    
+    // Update the health bar UI
+    const healthBar = document.getElementById('enemy-health-bar');
+    if (healthBar) {
+      const healthPercent = (this.health / this.maxHealth) * 100;
+      healthBar.style.width = `${healthPercent}%`;
       
-      // Get enemy forward direction
-      const forward = new Vector3(0, 0, 1).applyQuaternion((this as any).quaternion);
-      
-      // If hit from the front (dot product > 0), block reduces damage by 75%
-      const dot = forward.dot(toHit);
-      if (dot > 0.3) { // Blocking angle (about 60 degrees from front)
-        amount *= 0.25; // Reduce damage by 75%
-        
-        // Create a clash effect at the lightsaber position
-        const clashPosition = this.lightsaber.getSaberTipPosition();
-        const sceneParent = this.parent as Scene;
-        createSaberClashEffect(sceneParent, clashPosition, '#ff8800');
+      // Change color based on health
+      if (healthPercent > 60) {
+        healthBar.style.backgroundColor = '#00ff00'; // Green
+      } else if (healthPercent > 30) {
+        healthBar.style.backgroundColor = '#ffff00'; // Yellow
+      } else {
+        healthBar.style.backgroundColor = '#ff0000'; // Red
       }
     }
     
-    // Apply damage
-    this.health -= amount;
-    
-    // Enter staggered state if hit
-    if (amount > 0 && this.health > 0) {
-      this.staggerTime = 0.3; // Staggered for 0.3 seconds
-      this.state = EnemyState.STAGGERED;
-    }
-    
-    // Check for death
+    // Check if dead
     if (this.health <= 0) {
-      this.health = 0;
       this.die();
+      return;
     }
     
-    return amount; // Return actual damage dealt
+    // Enter staggered state
+    this.state = EnemyState.STAGGERED;
+    this.staggerTime = 0.5;
+    
+    // Play hit sound
+    gameAudio.playSound('enemyHit', { volume: 0.8 });
   }
   
   private die(): void {
@@ -267,6 +386,12 @@ export class Enemy extends Group {
     
     // Create hit effect
     createHitEffect(this.parent as Scene, this.position.clone(), '#ff3333');
+    
+    // Send event that enemy died (for scoring/game state)
+    const event = new CustomEvent('enemyDied', {
+      detail: { position: this.position.clone() }
+    });
+    window.dispatchEvent(event);
   }
   
   private animate(deltaTime: number): void {
@@ -338,7 +463,7 @@ export class Enemy extends Group {
   }
   
   isAttacking(): boolean {
-    return this.attacking;
+    return this.state === EnemyState.ATTACKING;
   }
   
   isBlocking(): boolean {
@@ -546,5 +671,236 @@ export class Enemy extends Group {
   // Add method to access attack timer for combat system
   getAttackTimer(): number {
     return this.attackTimer;
+  }
+
+  // Add missing getLightsaberPosition method to Enemy class
+  getLightsaberPosition(): Vector3 {
+    const position = this.lightsaber.getBladeTopPosition();
+    return position;
+  }
+
+  // Implement missing playLightsaberClashSound method
+  playLightsaberClashSound(): void {
+    gameAudio.playSound('lightsaberClash', { volume: 0.8 });
+  }
+
+  applyStagger(duration: number): void {
+    if (this.state === EnemyState.DEAD) return;
+    
+    this.state = EnemyState.STAGGERED;
+    this.staggerTime = duration;
+  }
+
+  // Modify respawn to reset damage marks
+  respawn(): void {
+    this.health = this.maxHealth;
+    this.state = EnemyState.IDLE;
+    this.position.set(0, 0, -5); // Fixed spawn position
+    this.rotation.set(0, Math.PI, 0);
+    this.clearDamageVisuals();
+    this.lastRespawnTime = performance.now() / 1000; // Record respawn time
+    
+    // Dispatch proper event
+    const event = new CustomEvent('enemyRespawned', {
+      detail: { enemy: this }
+    });
+    window.dispatchEvent(event);
+  }
+
+  // Add missing resetPosition method that's called from event handler
+  resetPosition(): void {
+    // Reset to default position and orientation
+    this.position.set(0, 0, -5);
+    this.rotation.set(0, Math.PI, 0);
+    
+    // Reset physics properties if needed
+    if (this.velocity) {
+      this.velocity.set(0, 0, 0);
+    }
+    
+    console.log("Enemy position reset to:", this.position);
+  }
+
+  // Add a method to create visible damage marks
+  private addDamageVisual(): void {
+    if (this.damageMarks.length >= 5) return; // Limit number of damage marks
+    
+    // Create a glowing damage mark
+    const damageGeo = new SphereGeometry(0.05, 8, 8);
+    const damageMat = new MeshBasicMaterial({
+      color: 0xff6600,
+      transparent: true, 
+      opacity: 0.8
+    });
+    
+    const damageMark = new Mesh(damageGeo, damageMat);
+    
+    // Random position on body
+    const bodyParts = [this.head, this.body, this.leftArm, this.rightArm];
+    const targetPart = bodyParts[Math.floor(Math.random() * bodyParts.length)];
+    
+    // Random offset on the chosen body part
+    const randomX = (Math.random() - 0.5) * 0.3;
+    const randomY = (Math.random() - 0.5) * 0.3;
+    const randomZ = (Math.random() - 0.5) * 0.3;
+    
+    damageMark.position.copy(targetPart.position);
+    damageMark.position.x += randomX;
+    damageMark.position.y += randomY;
+    damageMark.position.z += randomZ;
+    
+    this.add(damageMark);
+    this.damageMarks.push(damageMark);
+  }
+
+  // Clear all damage visuals when respawning
+  clearDamageVisuals(): void {
+    // Remove each damage mark mesh
+    for (const mark of this.damageMarks) {
+      this.remove(mark);
+      if (mark.material) {
+        if (Array.isArray(mark.material)) {
+          mark.material.forEach(m => m.dispose());
+        } else {
+          mark.material.dispose();
+        }
+      }
+      if (mark.geometry) mark.geometry.dispose();
+    }
+    
+    // Clear the array
+    this.damageMarks = [];
+  }
+
+  getLastRespawnTime(): number {
+    return this.lastRespawnTime || 0;
+  }
+
+  // Add a safe method for damage visual feedback
+  flashDamageVisual(): void {
+    // Gradual hit coloring
+    const startTime = performance.now();
+    const duration = 500; // ms
+    const maxIntensity = 1.0;
+    
+    // Store original colors
+    const originalColors = new Map();
+    
+    this.traverse((child) => {
+      if (child instanceof Mesh && child.material instanceof MeshStandardMaterial) {
+        // Store original color
+        originalColors.set(child, {
+          color: child.material.color.clone(),
+          emissive: child.material.emissive.clone()
+        });
+      }
+    });
+    
+    // Animate the hit effect
+    const animate = () => {
+      const elapsed = performance.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Use sine curve for smooth fade in/out
+      const intensity = Math.sin(progress * Math.PI) * maxIntensity;
+      
+      // Apply color based on intensity
+      this.traverse((child) => {
+        if (child instanceof Mesh && 
+            child.material instanceof MeshStandardMaterial && 
+            originalColors.has(child)) {
+          
+          const original = originalColors.get(child);
+          
+          // Blend between original color and red
+          const r = Math.min(1, original.color.r + intensity);
+          const g = Math.max(0, original.color.g - intensity * 0.8);
+          const b = Math.max(0, original.color.b - intensity * 0.8);
+          
+          child.material.color.setRGB(r, g, b);
+          
+          // Add emissive glow
+          child.material.emissive.setRGB(intensity * 0.5, 0, 0);
+        }
+      });
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // Reset to original colors
+        this.traverse((child) => {
+          if (child instanceof Mesh && 
+              child.material instanceof MeshStandardMaterial && 
+              originalColors.has(child)) {
+            
+            const original = originalColors.get(child);
+            child.material.color.copy(original.color);
+            child.material.emissive.copy(original.emissive);
+          }
+        });
+      }
+    };
+    
+    // Start animation
+    animate();
+  }
+
+  // Add attack cooldown setter
+  public setAttackCooldown(cooldown: number): void {
+    this.attackCooldown = cooldown;
+  }
+
+  public hasAppliedDamageInCurrentAttack(): boolean {
+    return this.hasAppliedDamage;
+  }
+
+  public setDamageAppliedInCurrentAttack(applied: boolean): void {
+    this.hasAppliedDamage = applied;
+    // Reset automatically after attack duration if needed
+    if (applied) {
+        setTimeout(() => { this.hasAppliedDamage = false; }, 1000); // Reset after 1s (attack duration)
+    }
+  }
+
+  public setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
+    if (this.lightsaber) this.lightsaber.setDebugMode(enabled); // Propagate if needed
+    // Toggle enemy-specific debug visuals
+  }
+
+  /**
+   * Handle a blade clash with another lightsaber
+   * @param clashPoint The world position where the clash occurred
+   * @param recoilDirection The direction to apply recoil force
+   */
+  public handleBladeClash(clashPoint: Vector3, recoilDirection: Vector3): void {
+    // Skip if in cooldown
+    if (this.isInClashCooldown) return;
+    
+    // Set cooldown flag
+    this.isInClashCooldown = true;
+    this.clashCooldownTime = performance.now();
+    
+    // Add slight recoil
+    const recoilForce = 4.0; // Stronger recoil for enemy
+    this.velocity.add(recoilDirection.clone().multiplyScalar(recoilForce));
+    
+    // Add stagger effect
+    this.setState('staggered');
+    setTimeout(() => {
+      if (this.state === 'staggered') {
+        this.setState('idle');
+      }
+    }, 800);
+    
+    // Add visual feedback
+    if (this.lightsaber) {
+      this.lightsaber.flash(0xFFFFFF, 150);
+    }
+    
+    // Reset cooldown after duration
+    setTimeout(() => {
+      this.isInClashCooldown = false;
+    }, 800); // Longer cooldown for enemy
   }
 }

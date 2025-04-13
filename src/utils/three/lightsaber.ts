@@ -1,17 +1,20 @@
-import { Group, Vector3, Mesh, CylinderGeometry, MeshStandardMaterial, MeshBasicMaterial, Color, AdditiveBlending, SpotLight, Object3D, PointLight, SphereGeometry } from 'three';
-import { ParticleEmitter } from './effects';
+import { Group, Vector3, Mesh, CylinderGeometry, MeshStandardMaterial, MeshBasicMaterial, Color, AdditiveBlending, SpotLight, Object3D, PointLight, SphereGeometry, DoubleSide, Scene } from 'three';
+import { ParticleEmitter, createLightsaberGlow, createHitEffect } from './effects';
 import gameAudio from './audio';
+import { isDamageable, isDestructible } from './types';
 
 export interface LightsaberOptions {
   color?: string;
   bladeLength?: number;
   hiltLength?: number;
   glowIntensity?: number;
+  scene?: Scene;
 }
 
 export class Lightsaber extends Group {
   declare position: Vector3;
   declare rotateY: (angle: number) => this;
+  private scene: Scene | null = null;
   private bladeColor: string;
   private bladeLength: number;
   private hiltLength: number;
@@ -19,25 +22,75 @@ export class Lightsaber extends Group {
   private active: boolean = false;
   private activationProgress: number = 0;
   private hilt: Mesh;
-  private blade: Mesh;
+  private blade: Group;
+  private bladeMesh: Mesh;
   private bladeCore: Mesh;
   private plasmaCore: Mesh;
   private bladeLight: PointLight;
   private glowEmitter: ParticleEmitter | null = null;
-  private isSwinging: boolean = false;
+  public isSwinging: boolean = false;
   private isBlocking: boolean = false;
   private initialRotation = { x: 0, y: 0, z: 0 };
   private swingAnimation: number | null = null;
-  private bladeFlare: Mesh;
+  private bladeFlare: Mesh | null = null;
   private pulseTime: number = 0;
+  private prevPosition: Vector3 = new Vector3();
+  private velocity: Vector3 = new Vector3();
+  private acceleration: Vector3 = new Vector3();
+  private rotationalInertia: Vector3 = new Vector3();
+  private swingPhase: number = 0;
+  private swingDirectionVector: Vector3 = new Vector3(1, 0, 0);
+  private swingDamping: number = 0.92;
+  private bladeSegments: (Mesh | Group)[] = [];
+  
+  // Swing mechanics
+  private swingState: 'idle' | 'windup' | 'strike' | 'recovery' = 'idle';
+  private swingType: 'light' | 'heavy' | 'none' = 'none';
+  private swingDirection: 'horizontal' | 'vertical' | 'diagonal' = 'horizontal';
+  private swingProgress: number = 0;
+  private swingDuration: number = 0;
+  private swingStartTime: number = 0;
+  private comboCount: number = 0;
+  private lastSwingTime: number = 0;
+  private comboResetTime: number = 0.5; // Time in seconds to reset combo
+  private swingCooldown: number = 0;
+  
+  // Damage properties
+  private lightAttackDamage: number = 20;
+  private heavyAttackDamage: number = 50;
+  private lightAttackDuration: number = 0.4;
+  private heavyAttackDuration: number = 0.7;
+  private lightAttackCooldown: number = 0.1;
+  private heavyAttackCooldown: number = 0.2;
+  
+  // Block properties
+  private blockDamageReduction: number = 0.8; // 80% damage reduction
+  
+  // Hitbox
+  private hitboxActive: boolean = false;
+  private hitboxRadius: number = 0.05;
+  private hitTargets: Set<Object3D> = new Set();
+
+  private debugMode: boolean = true;
 
   constructor(options: LightsaberOptions = {}) {
     super();
     
     this.bladeColor = options.color || '#3366ff';
     this.bladeLength = options.bladeLength || 1.2;
-    this.hiltLength = options.hiltLength || 0.25; // Slightly longer for more detail
+    this.hiltLength = options.hiltLength || 0.3; // Updated to match spec
     this.glowIntensity = options.glowIntensity || 1.0;
+    this.scene = options.scene || null;
+    
+    // Initialize properties to prevent null reference errors
+    this.glowEmitter = null;
+    this.bladeFlare = null;
+    
+    // Store initial position for physics
+    this.prevPosition.copy(this.position);
+    
+    // Center the lightsaber in the scene
+    this.position.set(0, 0, 0);
     
     // Create hilt group to contain all hilt components
     const hiltGroup = new Group();
@@ -72,6 +125,8 @@ export class Lightsaber extends Group {
     };
     
     // Add multiple etched rings for detail
+    // Use blade color for some of the rings
+    const colorValue = parseInt(this.bladeColor.replace('#', '0x'));
     addEtchedRing(this.hiltLength * 0.85, 0.026, 0.026, 0.01, 0x222222);
     addEtchedRing(this.hiltLength * 0.7, 0.0265, 0.0265, 0.015, 0x777777);
     addEtchedRing(this.hiltLength * 0.6, 0.027, 0.027, 0.01, 0x222222);
@@ -95,43 +150,7 @@ export class Lightsaber extends Group {
     hiltGroup.add(pommel);
     
     // Create blade (colored outer glow) with more translucency
-    const bladeGeometry = new CylinderGeometry(0.025, 0.015, this.bladeLength, 16);
-    const bladeMaterial = new MeshBasicMaterial({
-      color: new Color(this.bladeColor),
-      transparent: true,
-      opacity: 0,
-      blending: AdditiveBlending,
-      depthWrite: false // Make outer blade not write to depth buffer
-    });
-    this.blade = new Mesh(bladeGeometry, bladeMaterial);
-    this.blade.position.y = this.hiltLength + this.bladeLength / 2;
-    this.add(this.blade);
-    
-    // Improve core visibility with larger radius and brighter color
-    const coreGeometry = new CylinderGeometry(0.015, 0.01, this.bladeLength * 0.98, 16);
-    const coreMaterial = new MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0,
-      blending: AdditiveBlending,
-      depthWrite: false
-    });
-    this.bladeCore = new Mesh(coreGeometry, coreMaterial);
-    this.bladeCore.position.y = this.hiltLength + this.bladeLength / 2;
-    this.add(this.bladeCore);
-    
-    // Make plasma core more visible
-    const plasmaGeometry = new CylinderGeometry(0.008, 0.005, this.bladeLength * 0.96, 16);
-    const plasmaMaterial = new MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0,
-      blending: AdditiveBlending,
-      depthWrite: false
-    });
-    this.plasmaCore = new Mesh(plasmaGeometry, plasmaMaterial);
-    this.plasmaCore.position.y = this.hiltLength + this.bladeLength / 2;
-    this.add(this.plasmaCore);
+    this.createBlade();
     
     // Create light for blade glow
     this.bladeLight = new PointLight(this.bladeColor, 1, 2);
@@ -191,136 +210,191 @@ export class Lightsaber extends Group {
   }
   
   update(deltaTime: number): void {
-    // CRITICAL FIX: Force update blade visuals regardless of activation state
-    if (this.active) {
-      // Update pulse time
-      this.pulseTime += deltaTime;
-      
-      // Calculate pulse factor (0.8 to 1.0 range)
-      const pulseFactor = 0.8 + 0.2 * Math.sin(this.pulseTime * 2);
-      
-      // Force assign materials directly for immediate effect
-      if (this.blade.material instanceof MeshBasicMaterial) {
-        this.blade.material.opacity = 0.7 * pulseFactor;
-      }
-      if (this.bladeCore.material instanceof MeshBasicMaterial) {
-        this.bladeCore.material.opacity = 0.9 * pulseFactor;
-      }
-      if (this.plasmaCore.material instanceof MeshBasicMaterial) {
-        this.plasmaCore.material.opacity = pulseFactor;
-      }
-      
-      // Force light to be visible and pulsing
-      this.bladeLight.visible = true;
-      this.bladeLight.intensity = 2 * this.glowIntensity * pulseFactor;
+    if (!this.active) return;
+    
+    // Update cooldowns
+    if (this.swingCooldown > 0) {
+      this.swingCooldown -= deltaTime;
     }
-  }
-  
-  private updateBladeVisuals(): void {
-    // Update blade material - reduce opacity for more translucency
-    const bladeMaterial = this.blade.material as MeshBasicMaterial;
-    bladeMaterial.opacity = this.activationProgress * 0.5; // More translucent
     
-    // Update core material with higher opacity
-    const coreMaterial = this.bladeCore.material as MeshBasicMaterial;
-    coreMaterial.opacity = this.activationProgress * 1.2; // More visible
+    // Check for combo reset
+    if (this.comboCount > 0 && this.swingState === 'idle') {
+      const currentTime = performance.now() / 1000;
+      if (currentTime - this.lastSwingTime > this.comboResetTime) {
+        this.comboCount = 0;
+      }
+    }
     
-    // Update plasma core with even higher opacity
-    const plasmaMaterial = this.plasmaCore.material as MeshBasicMaterial;
-    plasmaMaterial.opacity = this.activationProgress * 1.5; // Very bright
+    // Update pulse time
+    this.pulseTime += deltaTime * 5; // Adjust speed of pulsation
     
-    // Scale blade based on activation progress
-    this.blade.scale.y = this.activationProgress;
-    this.blade.position.y = this.hiltLength + (this.bladeLength * this.activationProgress) / 2;
+    // Calculate pulse effect (subtle sine wave)
+    const pulseAmount = Math.sin(this.pulseTime) * 0.05 + 0.95; // Reduced variation
     
-    // Scale cores based on activation progress
-    this.bladeCore.scale.y = this.activationProgress;
-    this.bladeCore.position.y = this.hiltLength + (this.bladeLength * this.activationProgress) / 2;
+    // Apply pulse to blade opacity and scale
+    if (this.bladeMesh && this.bladeMesh.material instanceof MeshBasicMaterial) {
+      this.bladeMesh.material.opacity = 0.85 + Math.sin(this.pulseTime * 1.5) * 0.05;
+    }
     
-    this.plasmaCore.scale.y = this.activationProgress;
-    this.plasmaCore.position.y = this.hiltLength + (this.bladeLength * this.activationProgress) / 2;
+    if (this.bladeCore && this.bladeCore.material instanceof MeshBasicMaterial) {
+      this.bladeCore.material.opacity = 0.9 + Math.sin(this.pulseTime * 1.2) * 0.05;
+    }
     
-    // Update light intensity
-    this.bladeLight.visible = this.activationProgress > 0;
-    this.bladeLight.intensity = this.activationProgress * 2;
+    // Apply subtle scale pulsing
+    this.bladeMesh.scale.x = pulseAmount * 0.98 + 0.02;
+    this.bladeMesh.scale.z = pulseAmount * 0.98 + 0.02;
     
-    // Update glow emitter position
+    // Update blade light intensity with subtle pulsation
+    if (this.bladeLight) {
+      this.bladeLight.intensity = (1.0 + Math.sin(this.pulseTime * 2) * 0.1) * this.glowIntensity;
+    }
+    
+    // Update glow emitter if it exists
     if (this.glowEmitter) {
-      this.glowEmitter.position.y = this.hiltLength + (this.bladeLength * this.activationProgress) / 2;
+      // Update position to follow the blade tip
+      this.glowEmitter.position.copy(this.localToWorld(new Vector3(0, this.hiltLength + this.bladeLength, 0)));
     }
     
-    // Update blade flare
-    if (this.bladeFlare.material instanceof MeshBasicMaterial) {
-      this.bladeFlare.material.opacity = this.activationProgress * 0.8;
-      this.bladeFlare.position.y = this.hiltLength + (this.bladeLength * this.activationProgress);
-      
-      // Scale flare with activation
-      const flareScale = this.activationProgress * 1.2;
-      this.bladeFlare.scale.set(flareScale, flareScale, flareScale);
+    // Increase brightness dramatically during swing
+    if (this.bladeLight) {
+      if (this.swingState === 'strike') {
+        this.bladeLight.intensity = 1.8 * this.glowIntensity;
+        this.bladeLight.distance = 2.5;
+      } else if (this.swingState === 'windup' || this.swingState === 'recovery') {
+        this.bladeLight.intensity = 1.4 * this.glowIntensity;
+        this.bladeLight.distance = 2.2;
+      }
+    }
+    
+    // Update physics
+    this.updateBladePhysics(deltaTime);
+    
+    // Update particle effects
+    if (this.glowEmitter) {
+      this.glowEmitter.position.copy(this.getBladeTopPosition());
+      this.glowEmitter.setActive(this.active && this.activationProgress > 0.5);
+      this.glowEmitter.update(deltaTime);
+    }
+    
+    // Check for hits if hitbox is active
+    if (this.hitboxActive && this.parent) {
+      this.checkHits();
     }
   }
   
-  activate(): void {
-    if (this.active) return;
+  updateBladeVisuals(): void {
+    if (!this.bladeMesh) return;
     
-    this.active = true;
-    this.activationProgress = 0;
+    if (this.active) {
+      // Make all blade components visible
+      this.bladeMesh.visible = true;
+      this.bladeCore.visible = true;
+      this.plasmaCore.visible = true;
+      this.bladeLight.visible = true;
+      this.bladeFlare.visible = true;
+      
+      // Set proper scale for all blade components
+      this.bladeMesh.scale.set(1, 1, 1);
+      this.bladeCore.scale.set(1, 1, 1);
+      if (this.plasmaCore) this.plasmaCore.scale.set(1, 1, 1);
+      
+      // Set proper position for all blade components
+      this.bladeMesh.position.y = this.hiltLength + this.bladeLength / 2;
+      this.bladeCore.position.y = this.hiltLength + this.bladeLength / 2;
+      if (this.plasmaCore) this.plasmaCore.position.y = this.hiltLength + this.bladeLength / 2;
+      
+      // Play activation sound
+      gameAudio.playSound('lightsaberOn', { volume: 0.7 });
+      
+      // CRITICAL FIX: Immediately start the glow effect
+      // Apply immediate partial glow to make it visible
+      (this.bladeMesh.material as MeshBasicMaterial).opacity = 0.4;
+      (this.bladeCore.material as MeshBasicMaterial).opacity = 0.6;
+      if (this.plasmaCore) (this.plasmaCore.material as MeshBasicMaterial).opacity = 0.8;
+      this.bladeLight.intensity = 1.0 * this.glowIntensity;
+      // Enhanced active blade visuals
+      const bladeMaterial = this.bladeMesh.material as MeshBasicMaterial;
+      
+      // Make the blade more vibrant with a higher intensity core
+      bladeMaterial.color.setRGB(0.7, 0.9, 1.0);
+      
+      // Add a more pronounced pulsing effect with MUCH higher frequency
+      const pulseAmount = Math.sin(Date.now() * 0.06) * 0.3 + 0.9;
+      this.bladeMesh.scale.set(1.2, 1, pulseAmount);
+      
+      // Make sure the blade is visible
+      this.bladeMesh.visible = true;
+      
+      // Safely handle glowEmitter
+      if (this.glowEmitter) {
+        this.glowEmitter.visible = true;
+        // Make the glow pulse slightly out of sync with the blade
+        const glowPulse = Math.sin(Date.now() * 0.07) * 0.6 + 1.4;
+        this.glowEmitter.scale.set(glowPulse, glowPulse, glowPulse);
+      }
+      
+      // Update core visuals - make it much more vibrant
+      if (this.bladeCore && this.bladeCore.material instanceof MeshBasicMaterial) {
+        // Always make core white for better visual effect
+        this.bladeCore.material.color.setRGB(1.0, 1.0, 1.0);
+        this.bladeCore.material.opacity = 0.9;
+        
+        // Add stronger pulsing to the core with MUCH higher frequency
+        const corePulse = Math.sin(Date.now() * 0.08) * 0.4 + 0.9;
+        this.bladeCore.scale.set(corePulse, 1, corePulse);
+      }
+      
+      // Update plasma core - make it extremely bright
+      if (this.plasmaCore && this.plasmaCore.material instanceof MeshBasicMaterial) {
+        // Always make plasma core pure white
+        this.plasmaCore.material.color.setRGB(1.0, 1.0, 1.0);
+        this.plasmaCore.material.opacity = 0.9; // Slightly less opaque to blend better
+        
+        // Add rapid pulsing to the plasma core with MUCH higher frequency
+        const plasmaPulse = Math.sin(Date.now() * 0.1) * 0.5 + 0.8;
+        this.plasmaCore.scale.set(plasmaPulse, 1, plasmaPulse);
+      }
+      
+      // Update blade light intensity with pulsing
+      if (this.bladeLight) {
+        const lightPulse = Math.sin(Date.now() * 0.025) * 0.5 + 1.2;
+        this.bladeLight.intensity = this.glowIntensity * 1.5 * lightPulse;
+      }
+      
+      // Update blade flare with pulsing
+      if (this.bladeFlare) {
+        const flarePulse = Math.sin(Date.now() * 0.02) * 0.6 + 1.3;
+        this.bladeFlare.scale.set(flarePulse, flarePulse, flarePulse);
+      }
+    } else {
+      // Blade is off
+      this.bladeMesh.visible = false;
+    }
+  }
+  
+  activate(activate: boolean = true): void {
+    if (this.active === activate) return;
     
-    // Make all blade components visible
-    this.blade.visible = true;
-    this.bladeCore.visible = true;
-    this.plasmaCore.visible = true;
-    this.bladeLight.visible = true;
-    this.bladeFlare.visible = true;
+    console.log("Lightsaber activating...");
+    this.active = activate;
     
-    // Play activation sound
-    gameAudio.playSound('lightsaberOn', { volume: 0.7 });
+    // Make blade visible immediately when activating
+    if (activate) {
+      this.blade.visible = true;
+      // Play activation sound
+      if (gameAudio) {
+        gameAudio.playSound('saberOn');
+      }
+    }
     
-    // CRITICAL FIX: Immediately start the glow effect
-    // Apply immediate partial glow to make it visible
-    (this.blade.material as MeshBasicMaterial).opacity = 0.4;
-    (this.bladeCore.material as MeshBasicMaterial).opacity = 0.6;
-    (this.plasmaCore.material as MeshBasicMaterial).opacity = 0.8;
-    this.bladeLight.intensity = 1.0 * this.glowIntensity;
+    // Animate the blade activation/deactivation
+    this.animateActivation(activate);
   }
   
   deactivate(): void {
     if (!this.active) return;
-    
-    // Play deactivation sound
-    gameAudio.playSound('lightsaberOff', { volume: 0.5 });
-    
-    // Animate blade disappearance
-    const startTime = Date.now();
-    const duration = 200; // ms
-    let progress = 0;
-    
-    const animate = () => {
-      const elapsed = Date.now() - startTime;
-      progress = Math.min(elapsed / duration, 1);
-      
-      // Update blade visibility
-      if (this.blade.material instanceof MeshBasicMaterial) {
-        this.blade.material.opacity = (1 - progress) * 0.8;
-      }
-      
-      // Shrink blade into hilt
-      this.blade.scale.set(1, 1 - progress, 1);
-      
-      // Disable light when mostly retracted
-      if (progress > 0.7 && this.bladeLight.visible) {
-        this.bladeLight.visible = false;
-      }
-      
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      } else {
-        this.active = false;
-      }
-    };
-    
-    // Start animation
-    animate();
+    this.active = false;
+    gameAudio.playSound('saberOff');
   }
   
   isActive(): boolean {
@@ -333,6 +407,9 @@ export class Lightsaber extends Group {
   
   playSwingSound(): void {
     gameAudio.playSound('lightsaberSwing', { volume: 0.3 });
+    
+    // Start swing animation
+    this.startSwingAnimation();
   }
   
   playClashSound(): void {
@@ -340,9 +417,7 @@ export class Lightsaber extends Group {
   }
   
   getBladeTopPosition(): Vector3 {
-    // Calculate the position of the top of the blade in world space
-    const bladeTop = new Vector3(0, this.hiltLength + this.bladeLength, 0); // Local position of blade top
-    return this.localToWorld(bladeTop.clone());
+    return new Vector3(0, this.hiltLength + this.bladeLength, 0).applyMatrix4(this.matrixWorld);
   }
   
   getSaberTipPosition(): Vector3 {
@@ -595,44 +670,692 @@ export class Lightsaber extends Group {
       Math.round(b * 255).toString(16).padStart(2, '0');
   }
 
-  // Add method to swing at a specific target
+  // Improve lightsaber swing visibility for enemy
   swingAt(type: number, targetDirection: Vector3): void {
-    if (!this.active || this.isSwinging) return;
+    if (!this.active) {
+      // Force activate if not active
+      this.activate();
+    }
     
+    if (this.isSwinging) return;
     this.isSwinging = true;
     
-    // Store original rotation and position
+    console.log("Executing lightsaber swing");
+    
+    // Store original rotation for reset
     const originalRotation = {
       x: this.rotation.x,
       y: this.rotation.y,
       z: this.rotation.z
     };
     
-    const originalPosition = {
-      x: this.position.x,
-      y: this.position.y,
-      z: this.position.z
-    };
+    // Create more dramatic swing animation based on type
+    let swingDuration = 400; // ms
+    let maxAngle = Math.PI * 0.8; // More dramatic angle
     
-    // Determine swing axis based on swing type and target direction
-    let swingAxis = new Vector3(0, 1, 0); // Default vertical axis
-    
-    if (type === 0) { // Horizontal swing - use up/down axis
-      swingAxis = new Vector3(0, 1, 0);
-    } else if (type === 1) { // Vertical swing - use left/right axis
-      swingAxis = new Vector3(1, 0, 0);
-    } else { // Diagonal swing - use diagonal axis
-      swingAxis = new Vector3(1, 1, 0).normalize();
-    }
-    
-    // Adjust swing direction to point toward target
+    // Direction to adjust for target
     const adjustmentAngle = Math.atan2(targetDirection.x, targetDirection.z);
     this.rotation.y = adjustmentAngle;
     
-    // Play swing sound
-    gameAudio.playSound('lightsaberSwing', { volume: 0.5 });
+    // CRITICAL FIX: Make swing more visible with larger rotation and color enhancement
+    const startTime = Date.now();
     
-    // Use existing swing animation but with adjusted starting rotation
-    this.swing(type);
+    // Increase brightness dramatically during swing
+    if (this.bladeLight) {
+      this.bladeLight.intensity *= 2;
+      this.bladeLight.distance *= 1.5;
+    }
+    
+    // Use more dramatic swing with visual trail effect
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / swingDuration, 1);
+      
+      // More dramatic swing movement
+      // For horizontal swing (type 0)
+      if (type === 0) {
+        // Wide horizontal arc with sine easing
+        const swingRatio = Math.sin(progress * Math.PI);
+        this.rotation.z = originalRotation.z + (maxAngle * swingRatio * (progress < 0.5 ? -1 : 1));
+      } 
+      // For vertical swing (type 1)
+      else if (type === 1) {
+        // Dramatic overhead swing
+        const swingRatio = Math.sin(progress * Math.PI);
+        this.rotation.x = originalRotation.x + (maxAngle * swingRatio);
+      }
+      // Diagonal swing (type 2)
+      else {
+        // Combined movement
+        const swingRatio = Math.sin(progress * Math.PI);
+        this.rotation.x = originalRotation.x + (maxAngle * 0.7 * swingRatio);
+        this.rotation.z = originalRotation.z + (maxAngle * 0.7 * swingRatio);
+      }
+      
+      // Continue animation until complete
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // Reset rotation and swing state
+        setTimeout(() => {
+          this.rotation.set(
+            originalRotation.x,
+            this.rotation.y, // Keep facing direction
+            originalRotation.z
+          );
+          this.isSwinging = false;
+          
+          // Reset blade light
+          if (this.bladeLight) {
+            this.bladeLight.intensity /= 2;
+            this.bladeLight.distance /= 1.5;
+          }
+        }, 100);
+      }
+    };
+    
+    // Start animation
+    animate();
+    
+    // Play swing sound
+    gameAudio.playSound('lightsaberSwing', { volume: 0.8 });
+  }
+
+  setColor(color: string): void {
+    this.bladeColor = color;
+    
+    // Update blade color
+    if (this.bladeMesh && this.bladeMesh.material instanceof MeshBasicMaterial) {
+      this.bladeMesh.material.color.set(color);
+    }
+    
+    // Update blade tip color
+    if (this.bladeFlare && this.bladeFlare.material instanceof MeshBasicMaterial) {
+      this.bladeFlare.material.color.set(color);
+    }
+    
+    // Update core color (always white for better visual effect)
+    if (this.bladeCore && this.bladeCore.material instanceof MeshBasicMaterial) {
+      // Always make core white for better visual effect
+      this.bladeCore.material.color.setRGB(1.0, 1.0, 1.0);
+    }
+    
+    // Update plasma core (always white)
+    if (this.plasmaCore && this.plasmaCore.material instanceof MeshBasicMaterial) {
+      // Always make plasma core pure white
+      this.plasmaCore.material.color.setRGB(1.0, 1.0, 1.0);
+    }
+    
+    // Update light color
+    if (this.bladeLight) {
+      this.bladeLight.color.set(color);
+    }
+    
+    // Update glow emitter if it exists
+    if (this.glowEmitter) {
+      // Update emitter color
+      this.glowEmitter.setColor(parseInt(color.replace('#', '0x')));
+    }
+    
+    // Update only the activation button color
+    this.traverse((child) => {
+      if (child instanceof Mesh && 
+          child.material instanceof MeshStandardMaterial && 
+          child.material.emissive && 
+          child.material.emissiveIntensity > 0 &&
+          child.position.y === this.hiltLength * 0.5) { // Only the activation button
+        // This is the activation button, update its color
+        child.material.color.set(color);
+        child.material.emissive.set(color);
+      }
+    });
+  }
+
+  /**
+   * Creates the blade mesh for the lightsaber
+   */
+  private createBlade(): void {
+    this.blade = new Group();
+    this.blade.position.set(0, this.hiltLength / 2, 0); // Position at top of hilt
+    
+    // Create the outer glow
+    const bladeGeometry = new CylinderGeometry(0.03, 0.02, this.bladeLength, 16);
+    const bladeMaterial = new MeshBasicMaterial({
+      color: this.bladeColor,
+      transparent: true,
+      opacity: 0.4,
+      blending: AdditiveBlending // Add this for better glow effect
+    });
+    this.bladeMesh = new Mesh(bladeGeometry, bladeMaterial);
+    this.bladeMesh.position.set(0, this.bladeLength / 2, 0);
+    this.blade.add(this.bladeMesh);
+    
+    // Create inner core - brighter
+    const coreGeometry = new CylinderGeometry(0.015, 0.01, this.bladeLength + 0.05, 8);
+    const coreMaterial = new MeshBasicMaterial({
+      color: 0xffffff, // White core
+      transparent: false, // Change to false to make core fully visible
+      opacity: 1.0,
+      blending: AdditiveBlending // Add this for better glow effect
+    });
+    this.bladeCore = new Mesh(coreGeometry, coreMaterial);
+    this.bladeCore.position.set(0, this.bladeLength / 2, 0);
+    this.blade.add(this.bladeCore);
+    
+    // Create brightest plasma core
+    const plasmaGeometry = new CylinderGeometry(0.008, 0.005, this.bladeLength + 0.1, 8);
+    const plasmaMaterial = new MeshBasicMaterial({
+      color: 0xffffff, // Pure white
+      transparent: false, // Change to false to make plasma fully visible
+      opacity: 1.0,
+      blending: AdditiveBlending // Add this for better glow effect
+    });
+    this.plasmaCore = new Mesh(plasmaGeometry, plasmaMaterial);
+    this.plasmaCore.position.set(0, this.bladeLength / 2, 0);
+    this.blade.add(this.plasmaCore);
+    
+    // Add blade to the lightsaber
+    this.add(this.blade);
+    
+    // Initially hide blade
+    this.blade.visible = false;
+    
+    // Verify components
+    console.log("Blade components verified");
+  }
+
+  startSwingAnimation(): void {
+    if (this.isSwinging) return;
+    
+    this.isSwinging = true;
+    
+    // Store original rotation
+    const originalRotation = {
+      x: this.rotation.x,
+      y: this.rotation.y,
+      z: this.rotation.z
+    };
+    
+    // Animate swing
+    const startTime = Date.now();
+    const duration = 300; // ms
+    
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Swing motion
+      const swingAngle = Math.sin(progress * Math.PI) * 0.8;
+      this.rotation.z = originalRotation.z + swingAngle;
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // Reset rotation and swinging state
+        this.rotation.set(originalRotation.x, originalRotation.y, originalRotation.z);
+        this.isSwinging = false;
+      }
+    };
+    
+    // Start animation
+    animate();
+  }
+
+  updateBladePhysics(deltaTime: number): void {
+    if (!this.active || this.bladeSegments.length === 0) return;
+    
+    // Calculate current velocity based on position change
+    const currentVelocity = new Vector3().subVectors(this.position, this.prevPosition).divideScalar(deltaTime);
+    
+    // Calculate acceleration
+    this.acceleration.subVectors(currentVelocity, this.velocity);
+    
+    // Update velocity with damping
+    this.velocity.copy(currentVelocity).multiplyScalar(0.8);
+    
+    // Store current position for next frame
+    this.prevPosition.copy(this.position);
+    
+    // Apply physics to blade segments with progressive delay
+    for (let i = 0; i < this.bladeSegments.length; i++) {
+      const segment = this.bladeSegments[i];
+      const segmentDelay = i * 0.05; // Increasing delay for segments further from hilt
+      
+      // Calculate forces for this segment
+      const centrifugalForce = this.acceleration.clone().multiplyScalar(0.2 * (i + 1));
+      
+      // Dampen swinging over time
+      this.rotationalInertia.lerp(centrifugalForce, 0.1 * (1 - segmentDelay));
+      
+      // Apply rotation based on physics
+      segment.rotation.x = this.rotationalInertia.z * 0.2 * (i + 1);
+      segment.rotation.z = -this.rotationalInertia.x * 0.2 * (i + 1);
+    }
+    
+    // Handle swinging animation
+    if (this.isSwinging) {
+      this.swingPhase += deltaTime * 8;
+      
+      if (this.swingPhase > Math.PI) {
+        this.isSwinging = false;
+        this.swingPhase = 0;
+      } else {
+        // Apply swing effect to blade segments
+        const swingForce = Math.sin(this.swingPhase) * 0.4;
+        
+        for (let i = 0; i < this.bladeSegments.length; i++) {
+          const segment = this.bladeSegments[i];
+          const segmentFactor = (i + 1) / this.bladeSegments.length;
+          
+          segment.rotation.x += this.swingDirectionVector.x * swingForce * segmentFactor;
+          segment.rotation.z += this.swingDirectionVector.z * swingForce * segmentFactor;
+        }
+      }
+    }
+  }
+
+  triggerSwing(direction: Vector3 = new Vector3(1, 0, 0)): void {
+    this.isSwinging = true;
+    this.swingPhase = 0;
+    this.swingDirectionVector.copy(direction).normalize();
+    
+    // Apply initial force to start the swing
+    this.rotationalInertia.add(direction.clone().multiplyScalar(0.5));
+  }
+
+  private updateBladeIntensity(): void {
+    if (!this.bladeMesh) return;
+    
+    // Pulse effect for the blade - subtle variation in brightness
+    const pulseIntensity = 0.9 + Math.sin(performance.now() * 0.005) * 0.1;
+    
+    // Update all blade segments
+    this.bladeSegments.forEach(segment => {
+      segment.children.forEach(child => {
+        if (child instanceof Mesh) {
+          if (child === segment.children[0]) {
+            // Core brightness
+            child.material.opacity = 0.9 * this.activationProgress * pulseIntensity;
+          } else {
+            // Glow brightness
+            child.material.opacity = 0.7 * this.activationProgress * pulseIntensity;
+          }
+        }
+      });
+    });
+  }
+
+  // Add a method to set the scene if not provided in constructor
+  setScene(scene: Scene): void {
+    this.scene = scene;
+  }
+
+  // Start a light attack
+  lightAttack(direction: 'horizontal' | 'vertical' | 'diagonal' = 'horizontal'): void {
+    if (this.swingCooldown > 0 || this.swingState !== 'idle') return;
+    
+    this.swingType = 'light';
+    this.swingDirection = direction;
+    this.swingState = 'windup';
+    this.swingProgress = 0;
+    this.swingDuration = this.lightAttackDuration;
+    this.swingStartTime = performance.now() / 1000;
+    
+    // Apply combo effects
+    const comboSpeedMultiplier = 1 + (this.comboCount * 0.1); // 10% faster per combo
+    this.swingDuration /= comboSpeedMultiplier;
+    
+    // Play swing sound
+    gameAudio.playSound('lightsaberSwing', { 
+      volume: 0.7,
+      detune: this.comboCount * 100 // Higher pitch with combo
+    });
+    
+    // Start the swing animation
+    this.animateSwing();
+  }
+  
+  // Start a heavy attack
+  heavyAttack(direction: 'horizontal' | 'vertical' | 'diagonal' = 'horizontal'): void {
+    if (this.swingCooldown > 0 || this.swingState !== 'idle') return;
+    
+    this.swingType = 'heavy';
+    this.swingDirection = direction;
+    this.swingState = 'windup';
+    this.swingProgress = 0;
+    this.swingDuration = this.heavyAttackDuration;
+    this.swingStartTime = performance.now() / 1000;
+    
+    // Apply combo effects
+    const comboSpeedMultiplier = 1 + (this.comboCount * 0.1); // 10% faster per combo
+    this.swingDuration /= comboSpeedMultiplier;
+    
+    // Play swing sound with lower pitch for heavy attack
+    gameAudio.playSound('lightsaberSwing', { 
+      volume: 0.9,
+      detune: -200 + (this.comboCount * 50) // Lower pitch for heavy, but increases with combo
+    });
+    
+    // Start the swing animation
+    this.animateSwing();
+  }
+  
+  // Set blocking state
+  setBlocking(blocking: boolean): void {
+    this.isBlocking = blocking;
+    
+    if (blocking) {
+      // Move to blocking stance
+      this.rotation.x = Math.PI * 0.25; // Angle blade upward
+      this.rotation.z = Math.PI * 0.1; // Slight tilt
+      
+      // Play block sound
+      gameAudio.playSound('lightsaberHum', { volume: 0.5, detune: 200 });
+    } else {
+      // Return to idle stance if not in another state
+      if (this.swingState === 'idle') {
+        this.rotation.x = 0;
+        this.rotation.z = 0;
+      }
+    }
+  }
+  
+  // Animate the swing based on current state and direction
+  private animateSwing(): void {
+    // Store original rotation
+    const originalRotation = {
+      x: this.rotation.x,
+      y: this.rotation.y,
+      z: this.rotation.z
+    };
+    
+    // Define animation phases
+    const windupDuration = this.swingType === 'light' ? 0.15 : 0.25;
+    const strikeDuration = this.swingType === 'light' ? 0.1 : 0.15;
+    const recoveryDuration = this.swingType === 'light' ? 0.15 : 0.3;
+    
+    // Animation loop
+    const animate = () => {
+      const currentTime = performance.now() / 1000;
+      const elapsed = currentTime - this.swingStartTime;
+      this.swingProgress = elapsed / this.swingDuration;
+      
+      // Determine current phase
+      if (elapsed < windupDuration) {
+        // Wind-up phase
+        this.swingState = 'windup';
+        const windupProgress = elapsed / windupDuration;
+        
+        // Apply wind-up motion based on direction
+        if (this.swingDirection === 'horizontal') {
+          // Pull back for horizontal swing
+          this.rotation.y = originalRotation.y - (Math.PI * 0.3 * windupProgress);
+          this.rotation.z = originalRotation.z - (Math.PI * 0.1 * windupProgress);
+        } else if (this.swingDirection === 'vertical') {
+          // Raise for vertical swing
+          this.rotation.x = originalRotation.x + (Math.PI * 0.4 * windupProgress);
+        } else if (this.swingDirection === 'diagonal') {
+          // Diagonal wind-up
+          this.rotation.x = originalRotation.x + (Math.PI * 0.2 * windupProgress);
+          this.rotation.y = originalRotation.y - (Math.PI * 0.2 * windupProgress);
+        }
+        
+      } else if (elapsed < windupDuration + strikeDuration) {
+        // Strike phase
+        this.swingState = 'strike';
+        const strikeProgress = (elapsed - windupDuration) / strikeDuration;
+        
+        // Activate hitbox during strike
+        this.hitboxActive = true;
+        
+        // Apply strike motion based on direction
+        if (this.swingDirection === 'horizontal') {
+          // Horizontal swing (from left to right)
+          this.rotation.y = originalRotation.y - (Math.PI * 0.3) + (Math.PI * 0.6 * strikeProgress);
+          this.rotation.z = originalRotation.z - (Math.PI * 0.1) + (Math.PI * 0.2 * strikeProgress);
+        } else if (this.swingDirection === 'vertical') {
+          // Vertical swing (from up to down)
+          this.rotation.x = originalRotation.x + (Math.PI * 0.4) - (Math.PI * 0.8 * strikeProgress);
+        } else if (this.swingDirection === 'diagonal') {
+          // Diagonal swing
+          this.rotation.x = originalRotation.x + (Math.PI * 0.2) - (Math.PI * 0.4 * strikeProgress);
+          this.rotation.y = originalRotation.y - (Math.PI * 0.2) + (Math.PI * 0.4 * strikeProgress);
+        }
+        
+      } else if (elapsed < this.swingDuration) {
+        // Recovery phase
+        this.swingState = 'recovery';
+        const recoveryProgress = (elapsed - windupDuration - strikeDuration) / recoveryDuration;
+        
+        // Deactivate hitbox
+        this.hitboxActive = false;
+        
+        // Apply recovery motion (return to original position with slight overshoot)
+        if (this.swingDirection === 'horizontal') {
+          const overshoot = Math.sin(recoveryProgress * Math.PI) * 0.1;
+          this.rotation.y = originalRotation.y + (Math.PI * 0.3 * (1 - recoveryProgress)) + overshoot;
+          this.rotation.z = originalRotation.z + (Math.PI * 0.1 * (1 - recoveryProgress));
+        } else if (this.swingDirection === 'vertical') {
+          const overshoot = Math.sin(recoveryProgress * Math.PI) * 0.1;
+          this.rotation.x = originalRotation.x - (Math.PI * 0.4 * (1 - recoveryProgress)) - overshoot;
+        } else if (this.swingDirection === 'diagonal') {
+          const overshoot = Math.sin(recoveryProgress * Math.PI) * 0.1;
+          this.rotation.x = originalRotation.x - (Math.PI * 0.2 * (1 - recoveryProgress)) - overshoot;
+          this.rotation.y = originalRotation.y + (Math.PI * 0.2 * (1 - recoveryProgress)) + overshoot;
+        }
+        
+      } else {
+        // Swing complete
+        this.swingState = 'idle';
+        this.rotation.x = originalRotation.x;
+        this.rotation.y = originalRotation.y;
+        this.rotation.z = originalRotation.z;
+        
+        // Set cooldown
+        this.swingCooldown = this.swingType === 'light' ? this.lightAttackCooldown : this.heavyAttackCooldown;
+        
+        // Update combo
+        this.comboCount = Math.min(5, this.comboCount + 1);
+        this.lastSwingTime = currentTime;
+        
+        return; // End animation
+      }
+      
+      // Continue animation
+      requestAnimationFrame(animate);
+    };
+    
+    // Start animation
+    animate();
+  }
+
+  // Check for hits with the lightsaber
+  private checkHits(): void {
+    // Get the scene
+    const scene = this.parent.parent;
+    if (!scene) return;
+    
+    // Find the actual Scene object by traversing up the hierarchy
+    let actualScene = scene;
+    while (actualScene && !(actualScene as any).isScene) {
+      actualScene = actualScene.parent;
+    }
+    
+    if (!actualScene) {
+      console.warn('Could not find Scene object in hierarchy');
+      return;
+    }
+    
+    // Get blade tip and base positions in world space
+    const bladeTip = this.localToWorld(new Vector3(0, this.hiltLength + this.bladeLength, 0));
+    const bladeBase = this.localToWorld(new Vector3(0, this.hiltLength, 0));
+    
+    // Find potential targets
+    scene.traverse((object) => {
+      // Skip self and already hit targets
+      if (object === this || object === this.parent || this.hitTargets.has(object)) return;
+      
+      // Check if object is an enemy or destructible
+      if (object.name === 'enemy' && isDamageable(object)) {
+        // Simple distance check to blade line segment
+        const distanceToLine = this.distanceToLineSegment(
+          object.position, 
+          bladeBase,
+          bladeTip
+        );
+        
+        // If within hitbox radius, register a hit
+        if (distanceToLine < this.hitboxRadius + 0.5) { // Add object radius approximation
+          this.hitTargets.add(object);
+          
+          // Calculate damage based on swing type and combo
+          const baseDamage = this.swingType === 'light' ? this.lightAttackDamage : this.heavyAttackDamage;
+          const comboDamageMultiplier = 1 + (this.comboCount * 0.05); // 5% more damage per combo
+          const damage = baseDamage * comboDamageMultiplier;
+          
+          // Apply damage to the target
+          object.takeDamage(damage, this.parent.position);
+          
+          // Create hit effect
+          createHitEffect(actualScene as Scene, object.position.clone(), this.bladeColor);
+          
+          // Play hit sound
+          gameAudio.playSound('lightsaberHit', { volume: 0.8 });
+        }
+      } else if (object.userData.destructible && isDestructible(object)) {
+        // Handle destructible objects
+        object.destroy();
+        
+        // Create destruction effect
+        createHitEffect(actualScene as Scene, object.position.clone(), '#ffaa00');
+        
+        // Play destruction sound
+        gameAudio.playSound('objectDestroyed', { volume: 0.7 });
+      }
+    });
+  }
+  
+  // Helper to calculate distance from point to line segment
+  private distanceToLineSegment(point: Vector3, lineStart: Vector3, lineEnd: Vector3): number {
+    const line = new Vector3().subVectors(lineEnd, lineStart);
+    const lineLength = line.length();
+    line.normalize();
+    
+    const pointToStart = new Vector3().subVectors(point, lineStart);
+    const projection = pointToStart.dot(line);
+    
+    // If projection is outside the line segment, use distance to nearest endpoint
+    if (projection <= 0) {
+      return pointToStart.length();
+    } else if (projection >= lineLength) {
+      return new Vector3().subVectors(point, lineEnd).length();
+    }
+    
+    // Calculate perpendicular distance to line
+    const projectedPoint = new Vector3().copy(lineStart).add(line.multiplyScalar(projection));
+    return new Vector3().subVectors(point, projectedPoint).length();
+  }
+
+  // Create blade light
+  createBladeLight(): void {
+    // Remove old light if it exists
+    if (this.bladeLight) {
+      this.blade.remove(this.bladeLight);
+    }
+    
+    // Create a point light for the blade
+    this.bladeLight = new PointLight(this.bladeColor, this.glowIntensity, 2.0);
+    this.bladeLight.position.y = this.bladeLength / 2;
+    this.blade.add(this.bladeLight);
+    
+    // Make sure light is only visible when lightsaber is active
+    this.bladeLight.visible = this.active;
+  }
+
+  // Animate blade activation/deactivation
+  animateActivation(activate: boolean): void {
+    // Start activation animation
+    this.activationProgress = activate ? 0 : 1;
+    const duration = 0.3; // seconds
+    const startTime = performance.now() / 1000;
+    
+    const animate = () => {
+      const currentTime = performance.now() / 1000;
+      const elapsed = currentTime - startTime;
+      
+      if (activate) {
+        // Extending blade
+        this.activationProgress = Math.min(elapsed / duration, 1);
+      } else {
+        // Retracting blade
+        this.activationProgress = Math.max(1 - (elapsed / duration), 0);
+      }
+      
+      // Scale the blade based on activation progress
+      if (this.blade) {
+        this.blade.scale.y = this.activationProgress;
+        
+        // Update material opacities
+        if (this.bladeMesh && this.bladeMesh.material instanceof MeshBasicMaterial) {
+          this.bladeMesh.material.opacity = this.activationProgress * 0.4;
+        }
+        
+        if (this.bladeCore && this.bladeCore.material instanceof MeshBasicMaterial) {
+          this.bladeCore.material.opacity = this.activationProgress * 0.7;
+        }
+        
+        if (this.plasmaCore && this.plasmaCore.material instanceof MeshBasicMaterial) {
+          this.plasmaCore.material.opacity = this.activationProgress;
+        }
+        
+        // Hide blade when fully retracted
+        if (!activate && this.activationProgress === 0) {
+          this.blade.visible = false;
+          if (this.glowEmitter) {
+            this.glowEmitter.setActive(false);
+          }
+        }
+      }
+      
+      // Continue animation if not complete
+      if (activate && this.activationProgress < 1 || !activate && this.activationProgress > 0) {
+        requestAnimationFrame(animate);
+      }
+    };
+    
+    // Start animation
+    animate();
+  }
+
+  public setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
+  }
+
+  /**
+   * Create a flash effect on the blade
+   * @param color The color of the flash
+   * @param duration How long the flash lasts in ms
+   */
+  public flash(color: number, duration: number = 200): void {
+    // Save original color
+    const originalColor = this.bladeColor;
+    
+    // Change blade color
+    if (this.bladeMesh && this.bladeMesh.material instanceof MeshBasicMaterial) {
+      // Save original emissive intensity
+      const originalIntensity = this.bladeMesh.material.emissiveIntensity;
+      
+      // Set flash color and increased intensity
+      this.bladeMesh.material.emissive.setHex(color);
+      this.bladeMesh.material.emissiveIntensity = 2.5;
+      
+      // Restore original after duration
+      setTimeout(() => {
+        if (this.bladeMesh && this.bladeMesh.material instanceof MeshBasicMaterial) {
+          this.bladeMesh.material.emissive.setHex(originalColor);
+          this.bladeMesh.material.emissiveIntensity = originalIntensity;
+        }
+      }, duration);
+    }
   }
 }
