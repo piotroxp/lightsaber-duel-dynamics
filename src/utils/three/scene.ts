@@ -740,7 +740,7 @@ export class GameScene {
     
     // Add title
     const title = document.createElement('div');
-    title.textContent = 'LIGHTSABER COLOR';
+    title.textContent = 'PLASMABLADE COLOR';
     title.style.color = 'white';
     title.style.fontWeight = 'bold';
     title.style.textShadow = '0 0 3px #fff';
