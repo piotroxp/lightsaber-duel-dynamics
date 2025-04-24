@@ -5,60 +5,6 @@
 support btc bc1qhyg294l0r0jt4h9p6xepvjmvsfykk2m6wvmfxp
 support sol DDsLkdvH7ewQFA9pTfacVyNcGbtj12tKTZrt1HmqCQ6a
 
-<think>
-I need to get an overview of the codebase first. Let me explore the directory structure to understand what kind of project this is and how it's organized.
-
-First, I'll list the root directory contents:
-</think>
-
-I'll explore the codebase to create a comprehensive overview for you. Let's start by examining the directory structure.
-
-Ran tool
-Let's check the package.json to understand the project's dependencies and structure better:
-
-Read file: package.json
-Now let's look at the README to get a better understanding of what this project is about:
-
-Read file: README.md
-Let's explore the src directory to understand the code structure:
-
-Ran tool
-Let's check the server directory to understand the backend structure:
-
-Ran tool
-Let's look at the main App.tsx file to understand the application structure:
-
-Read file: src/App.tsx
-Let's look at the main server file:
-
-Read file: server/index.ts
-Let's check what's in the pages directory to understand the main application pages:
-
-Ran tool
-Let's examine the Index page:
-
-Read file: src/pages/Index.tsx
-Let's check the Game component:
-
-Ran tool
-Now let's examine the Game component:
-
-Read file: src/components/Game.tsx
-Let's look at the Three.js scene implementation that powers the lightsaber duel:
-
-Ran tool
-Let's look at the main scene implementation:
-
-Read file: src/utils/three/scene.ts
-Let's also check the player implementation:
-
-Read file: src/utils/three/player.ts
-Let's also check the lightsaber implementation:
-
-Ran tool
-
-Read file: src/utils/three/lightsaber.ts
-Based on the exploration of the codebase, I'll now provide a comprehensive overview of the project:
 
 # Plasma Blade Combat - Code Overview
 
